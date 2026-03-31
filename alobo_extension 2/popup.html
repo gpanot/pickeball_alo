@@ -1,0 +1,127 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+<meta charset="UTF-8">
+<style>
+  @import url('https://fonts.googleapis.com/css2?family=Space+Mono:wght@400;700&family=Syne:wght@800&display=swap');
+  * { margin:0; padding:0; box-sizing:border-box; }
+  body { width:380px; min-height:200px; max-height:600px; background:#0D0D0D; color:#e8e8e8; font-family:'Space Mono',monospace; font-size:11px; display:flex; flex-direction:column; }
+  header { background:#111; padding:12px 14px; border-bottom:1px solid #222; display:flex; align-items:center; gap:10px; flex-shrink:0; }
+  .logo { font-family:'Syne',sans-serif; font-size:16px; font-weight:800; color:#C8F135; }
+  .logo span { color:#FF5B1F; }
+  .badge { margin-left:auto; background:#C8F135; color:#000; font-size:10px; font-weight:700; padding:2px 8px; border-radius:2px; }
+  .status { padding:8px 14px; font-size:10px; border-bottom:1px solid #1a1a1a; flex-shrink:0; }
+  .status.ok { color:#C8F135; } .status.warn { color:#FF5B1F; } .status.info { color:#7090FF; }
+  .substatus { padding:4px 14px 8px; font-size:9px; color:#444; border-bottom:1px solid #1a1a1a; flex-shrink:0; }
+  .key-bar { padding:8px 14px; background:#0a1a0a; border-bottom:1px solid #1a2a1a; font-size:9px; color:#3a5a3a; word-break:break-all; flex-shrink:0; }
+  .key-bar.has-key { color:#4aaa4a; }
+  .venue-list { overflow-y:auto; flex:1; }
+  .venue-list::-webkit-scrollbar { width:3px; } .venue-list::-webkit-scrollbar-thumb { background:#333; }
+  .venue-item { padding:10px 14px; border-bottom:1px solid #1a1a1a; }
+  .venue-item:hover { background:#141414; }
+  .v-name { font-family:'Syne',sans-serif; font-size:12px; color:#fff; margin-bottom:2px; }
+  .v-addr { font-size:9px; color:#555; margin-bottom:5px; line-height:1.4; }
+  .v-tags { display:flex; flex-wrap:wrap; gap:4px; }
+  .tag { font-size:9px; padding:1px 6px; border-radius:2px; border:1px solid; }
+  .tag-price { background:rgba(200,241,53,.1); color:#C8F135; border-color:rgba(200,241,53,.2); }
+  .tag-sport { background:rgba(255,91,31,.1); color:#FF5B1F; border-color:rgba(255,91,31,.2); }
+  .empty { padding:24px 14px; text-align:center; color:#333; line-height:2.2; }
+  .empty strong { color:#555; display:block; margin-bottom:8px; }
+  .step { color:#C8F135; }
+  .actions { padding:10px 14px; display:flex; gap:8px; border-top:1px solid #222; flex-shrink:0; background:#111; }
+  button { flex:1; padding:8px; font-family:'Space Mono',monospace; font-size:10px; font-weight:700; cursor:pointer; border:none; border-radius:2px; }
+  .btn-json { background:#C8F135; color:#000; }
+  .btn-csv  { background:#1a3a0a; color:#C8F135; border:1px solid #C8F135; }
+  .btn-clear { background:#1a0a0a; color:#FF5B1F; border:1px solid #FF5B1F; flex:0 0 56px; }
+</style>
+</head>
+<body>
+<header>
+  <div class="logo">COURT<span>MAP</span></div>
+  <div class="badge" id="count">0 venues</div>
+</header>
+<div class="status warn" id="status">Waiting...</div>
+<div class="substatus" id="substatus">Keys: 0 | Decrypted: 0 | Venues: 0</div>
+<div class="key-bar" id="keyBar">AES key: not captured yet</div>
+<div class="venue-list" id="list">
+  <div class="empty">
+    <strong>No venues yet</strong>
+    <span class="step">1.</span> Go to datlich.alobo.vn<br>
+    <span class="step">2.</span> Skip onboarding<br>
+    <span class="step">3.</span> Filter by Pickleball<br>
+    <span class="step">4.</span> Scroll to load all venues<br>
+    <span class="step">5.</span> Export here
+  </div>
+</div>
+<div class="actions">
+  <button class="btn-json" id="btnJson">Export JSON</button>
+  <button class="btn-csv"  id="btnCsv">Export CSV</button>
+  <button class="btn-clear" id="btnClear">Clear</button>
+</div>
+<script>
+let venues = [];
+const fmtPrice = prices => {
+  if (!prices?.length) return null;
+  const f = v => `${Math.round(v/1000)}k đ`;
+  const mn = Math.min(...prices), mx = Math.max(...prices);
+  return mn === mx ? f(mn) : `${f(mn)} - ${f(mx)}`;
+};
+function render(data, stats, hasKey) {
+  venues = data;
+  document.getElementById('count').textContent = `${data.length} venue${data.length!==1?'s':''}`;
+  document.getElementById('substatus').textContent =
+    `Keys: ${stats?.keys||0} | Decrypted: ${stats?.decrypted||0} | Venues: ${stats?.venues||0} | JSON logs: ${stats?.jsonFromConsole||0} | Enc queued: ${stats?.encryptedQueued||0}`;
+  const keyBar = document.getElementById('keyBar');
+  if (hasKey) { keyBar.textContent = 'AES key: captured!'; keyBar.className = 'key-bar has-key'; }
+  const status = document.getElementById('status');
+  const list = document.getElementById('list');
+  if (!data.length) {
+    status.textContent = hasKey ? 'Key captured! Browse pickleball venues now.' : 'Waiting for key... reload datlich.alobo.vn';
+    status.className = hasKey ? 'status info' : 'status warn';
+    list.innerHTML = `<div class="empty"><strong>No venues yet</strong>
+      <span class="step">1.</span> Go to datlich.alobo.vn<br>
+      <span class="step">2.</span> Skip onboarding<br>
+      <span class="step">3.</span> Filter by Pickleball<br>
+      <span class="step">4.</span> Scroll to load all venues<br>
+      <span class="step">5.</span> Export here</div>`;
+    return;
+  }
+  status.textContent = `${data.length} venues captured!`;
+  status.className = 'status ok';
+  list.innerHTML = data.map(v => {
+    const p = fmtPrice(v.prices);
+    return `<div class="venue-item">
+      <div class="v-name">${v.name||'Unknown'}</div>
+      <div class="v-addr">${v.address||''}</div>
+      <div class="v-tags">
+        ${p ? `<span class="tag tag-price">${p}/hr</span>` : ''}
+        ${(v.sports||[]).map(s=>`<span class="tag tag-sport">${s}</span>`).join('')}
+      </div>
+    </div>`;
+  }).join('');
+}
+function load() {
+  chrome.runtime.sendMessage({type:'GET_VENUES'}, res => { if(res) render(res.venues||[], res.stats, res.hasKey); });
+}
+const toCSV = rows => {
+  const keys = ['name','address','sports','price_range','hours','phone','url'];
+  return [keys.join(','), ...rows.map(v => keys.map(k => `"${(String(v[k]||'')).replace(/"/g,'""')}"`).join(','))].join('\n');
+};
+document.getElementById('btnJson').onclick = () => {
+  if (!venues.length) return alert('No venues yet.');
+  const a = document.createElement('a');
+  a.href = URL.createObjectURL(new Blob([JSON.stringify(venues,null,2)],{type:'application/json'}));
+  a.download='courts.json'; a.click();
+};
+document.getElementById('btnCsv').onclick = () => {
+  if (!venues.length) return alert('No venues yet.');
+  const rows = venues.map(v => ({...v, sports:(v.sports||[]).join(', '), price_range: fmtPrice(v.prices)||''}));
+  const a = document.createElement('a');
+  a.href = URL.createObjectURL(new Blob([toCSV(rows)],{type:'text/csv'}));
+  a.download='courts.csv'; a.click();
+};
+document.getElementById('btnClear').onclick = () => chrome.runtime.sendMessage({type:'CLEAR'}, ()=>render([],{},false));
+load(); setInterval(load, 2000);
+</script>
+</body>
+</html>

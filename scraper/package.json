@@ -1,0 +1,14 @@
+{
+  "name": "alobo-scraper",
+  "version": "1.0.0",
+  "description": "Scraper for datlich.alobo.vn pickleball court pricing",
+  "type": "module",
+  "scripts": {
+    "scrape": "node scraper.js",
+    "keys": "node scraper.js --keys-only",
+    "browser": "node scraper.js --browser-only"
+  },
+  "dependencies": {
+    "puppeteer": "^24.0.0"
+  }
+}

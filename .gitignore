@@ -1,0 +1,8 @@
+.DS_Store
+.vercel
+*.log
+scraper/node_modules/
+node_modules/
+
+# Scraper output (regenerate locally; root courts.json is the viewer data source)
+scraper/output/
