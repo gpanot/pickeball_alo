@@ -6,6 +6,10 @@ Static pickleball court viewer (Vietnam / AloBo data): map, filters, and pricing
 
 Open `viewer.html` in a browser or serve the folder (fetch needs same-origin or a server for `courts.json`).
 
+## PWA
+
+Installable on mobile/desktop: `manifest.json` + `sw.js` (cache shell and `courts.json` after first load). Served over HTTPS on Vercel.
+
 ## Deploy (Vercel)
 
 **Import from GitHub (recommended)**  
