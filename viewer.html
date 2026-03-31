@@ -854,8 +854,6 @@ let courtsDataReady = false;
 let map, markers = {};
 let activeCard = null;
 let userMarker = null;
-let userRadiusCircle = null;
-let fitUserBoundsTimer = null;
 const LOC_DEFAULT_KM = 3;
 
 /** Planner state: date is YYYY-MM-DD (local); times in minutes from midnight */
@@ -1097,27 +1095,21 @@ function setUserOnMap(lat, lng) {
   }).addTo(map);
 }
 
-function removeUserRadiusCircle() {
-  if (userRadiusCircle) {
-    map.removeLayer(userRadiusCircle);
-    userRadiusCircle = null;
+function fitMapToAllVenuesAndUser() {
+  const pts = allVenues.filter(v => v.coords).map(v => v.coords);
+  if (!pts.length) {
+    if (planner.userLat != null && planner.userLng != null) {
+      map.setView([planner.userLat, planner.userLng], 12);
+    }
+    scheduleMapResize();
+    return;
   }
-}
-
-function fitMapToUserRadius() {
-  if (planner.userLat == null || planner.userLng == null || !userRadiusCircle) return;
-  map.fitBounds(userRadiusCircle.getBounds().pad(0.14));
+  const b = L.latLngBounds(pts);
+  if (planner.userLat != null && planner.userLng != null) {
+    b.extend([planner.userLat, planner.userLng]);
+  }
+  map.fitBounds(b, { padding: [40, 40] });
   scheduleMapResize();
-}
-
-function debouncedFitToUserRadius() {
-  clearTimeout(fitUserBoundsTimer);
-  fitUserBoundsTimer = setTimeout(fitMapToUserRadius, 280);
-}
-
-function updateUserRadiusCircle() {
-  if (!userRadiusCircle || planner.userLat == null) return;
-  userRadiusCircle.setRadius(planner.radiusKm * 1000);
 }
 
 function applyLocationFromCoords(lat, lng, options = {}) {
@@ -1132,17 +1124,7 @@ function applyLocationFromCoords(lat, lng, options = {}) {
     if (label) label.textContent = String(setRadiusKm);
   }
   setUserOnMap(lat, lng);
-  removeUserRadiusCircle();
-  userRadiusCircle = L.circle([lat, lng], {
-    radius: planner.radiusKm * 1000,
-    color: '#C8F135',
-    weight: 2,
-    dashArray: '7 10',
-    fillColor: '#C8F135',
-    fillOpacity: 0.07,
-    interactive: false
-  }).addTo(map);
-  fitMapToUserRadius();
+  fitMapToAllVenuesAndUser();
   const clr = document.getElementById('geoClear');
   if (clr) clr.style.display = 'block';
   filterVenues();
@@ -1247,7 +1229,6 @@ function clearUserLocation() {
     map.removeLayer(userMarker);
     userMarker = null;
   }
-  removeUserRadiusCircle();
   const st = document.getElementById('geoStatus');
   const clr = document.getElementById('geoClear');
   if (st) st.textContent = '';
@@ -1284,8 +1265,6 @@ function initPlannerControls() {
     slider.addEventListener('input', () => {
       planner.radiusKm = parseInt(slider.value, 10);
       label.textContent = String(planner.radiusKm);
-      updateUserRadiusCircle();
-      debouncedFitToUserRadius();
       filterVenues();
     });
   }
