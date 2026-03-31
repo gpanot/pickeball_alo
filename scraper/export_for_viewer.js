@@ -141,6 +141,14 @@ function main() {
   fs.writeFileSync(outFile, JSON.stringify(venues, null, 2));
   console.log(`Exported ${venues.length} venues → ${outFile}`);
 
+  const publicFile = path.join(__dirname, '..', 'public', 'courts.json');
+  try {
+    fs.writeFileSync(publicFile, JSON.stringify(venues, null, 2));
+    console.log(`  Also wrote → ${publicFile}`);
+  } catch (e) {
+    console.warn('  (Could not write public/courts.json — run from repo root with public/ present)');
+  }
+
   const withCoords = venues.filter(v => v.latitude && v.longitude).length;
   const withTables = venues.filter(v => v.pricing_tables.length > 0).length;
   console.log(`  With coordinates: ${withCoords}`);
