@@ -8,9 +8,12 @@ Open `viewer.html` in a browser or serve the folder (fetch needs same-origin or 
 
 ## Deploy (Vercel)
 
-Connected repo deploys automatically. Production URL is shown in the Vercel dashboard.
+**Import from GitHub (recommended)**  
+[Vercel Dashboard](https://vercel.com/new) → Add New Project → Import `gpanot/pickeball_alo`. Framework: **Other**, root directory **.** , no build command, output **.** (static). `vercel.json` already maps `/` → `viewer.html`.
 
-Root `/` rewrites to `viewer.html`.
+**CLI** (after `vercel login`): from this repo run `vercel deploy --prod`.
+
+Repo: https://github.com/gpanot/pickeball_alo
 
 ## Data
 
