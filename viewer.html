@@ -427,21 +427,6 @@
     min-height: 12px;
   }
 
-  .range-label {
-    display: block;
-    font-size: 9px;
-    color: var(--muted);
-    margin-bottom: 4px;
-  }
-
-  .range-label span { color: var(--acid); font-weight: 700; }
-
-  #radiusSlider {
-    width: 100%;
-    accent-color: var(--acid);
-    margin-bottom: 4px;
-  }
-
   .toggle-row {
     display: flex;
     align-items: center;
@@ -815,8 +800,6 @@
         <button type="button" class="geo-btn" id="geoBtn">Use my location</button>
         <span class="geo-clear" id="geoClear" style="display:none">Clear location</span>
         <div class="geo-status" id="geoStatus"></div>
-        <label class="range-label">Radius <span id="radiusLabel">5</span> km</label>
-        <input type="range" id="radiusSlider" min="1" max="10" value="5" step="1" />
       </div>
       <label class="toggle-row">
         <input type="checkbox" id="strictHours" />
@@ -854,7 +837,9 @@ let courtsDataReady = false;
 let map, markers = {};
 let activeCard = null;
 let userMarker = null;
-const LOC_DEFAULT_KM = 3;
+
+/** Map zoom around user (~3 km) — not a list filter */
+const MAP_VIEW_RADIUS_M = 3000;
 
 /** Planner state: date is YYYY-MM-DD (local); times in minutes from midnight */
 const planner = {
@@ -863,8 +848,7 @@ const planner = {
   period: 'morning',
   slotStartMin: null,
   userLat: null,
-  userLng: null,
-  radiusKm: 5
+  userLng: null
 };
 
 const PERIOD_WINDOWS = {
@@ -1095,44 +1079,34 @@ function setUserOnMap(lat, lng) {
   }).addTo(map);
 }
 
-function fitMapToAllVenuesAndUser() {
-  const pts = allVenues.filter(v => v.coords).map(v => v.coords);
-  if (!pts.length) {
-    if (planner.userLat != null && planner.userLng != null) {
-      map.setView([planner.userLat, planner.userLng], 12);
-    }
-    scheduleMapResize();
-    return;
-  }
-  const b = L.latLngBounds(pts);
-  if (planner.userLat != null && planner.userLng != null) {
-    b.extend([planner.userLat, planner.userLng]);
-  }
-  map.fitBounds(b, { padding: [40, 40] });
+function fitMapNearUser() {
+  if (planner.userLat == null || planner.userLng == null) return;
+  const lat = planner.userLat;
+  const lng = planner.userLng;
+  const rKm = MAP_VIEW_RADIUS_M / 1000;
+  const dLat = rKm / 111;
+  const dLng = rKm / (111 * Math.max(0.2, Math.cos((lat * Math.PI) / 180)));
+  const b = L.latLngBounds(
+    [lat - dLat, lng - dLng],
+    [lat + dLat, lng + dLng]
+  );
+  map.fitBounds(b.pad(0.12));
   scheduleMapResize();
 }
 
-function applyLocationFromCoords(lat, lng, options = {}) {
-  const { setRadiusKm } = options;
+function applyLocationFromCoords(lat, lng) {
   planner.userLat = lat;
   planner.userLng = lng;
-  if (typeof setRadiusKm === 'number' && setRadiusKm >= 1 && setRadiusKm <= 10) {
-    planner.radiusKm = setRadiusKm;
-    const slider = document.getElementById('radiusSlider');
-    const label = document.getElementById('radiusLabel');
-    if (slider) slider.value = String(setRadiusKm);
-    if (label) label.textContent = String(setRadiusKm);
-  }
   setUserOnMap(lat, lng);
-  fitMapToAllVenuesAndUser();
+  fitMapNearUser();
   const clr = document.getElementById('geoClear');
   if (clr) clr.style.display = 'block';
   filterVenues();
 }
 
-function requestGeolocation(opts = {}) {
-  const { setDefaultRadius } = opts;
+function requestGeolocation() {
   const st = document.getElementById('geoStatus');
+  const firstFix = planner.userLat == null;
   if (!navigator.geolocation) {
     if (st) st.textContent = 'Geolocation not supported';
     return;
@@ -1143,10 +1117,8 @@ function requestGeolocation(opts = {}) {
       try {
         localStorage.setItem('courtmap-geo-used', '1');
       } catch (e) {}
-      applyLocationFromCoords(pos.coords.latitude, pos.coords.longitude, {
-        setRadiusKm: setDefaultRadius ? LOC_DEFAULT_KM : undefined
-      });
-      if (st) st.textContent = `Near me · ${planner.radiusKm} km`;
+      applyLocationFromCoords(pos.coords.latitude, pos.coords.longitude);
+      if (st) st.textContent = 'Using your location';
       const clr = document.getElementById('geoClear');
       if (clr) clr.style.display = 'block';
       scheduleMapResize();
@@ -1157,7 +1129,7 @@ function requestGeolocation(opts = {}) {
     {
       enableHighAccuracy: true,
       timeout: 15000,
-      maximumAge: setDefaultRadius ? 0 : 60000
+      maximumAge: firstFix ? 0 : 60000
     }
   );
 }
@@ -1185,11 +1157,9 @@ function tryRestoreGeolocation(fallbackFit) {
 
   const opts = { enableHighAccuracy: true, timeout: 12000, maximumAge: 300000 };
   const ok = pos => {
-    applyLocationFromCoords(pos.coords.latitude, pos.coords.longitude, {
-      setRadiusKm: LOC_DEFAULT_KM
-    });
+    applyLocationFromCoords(pos.coords.latitude, pos.coords.longitude);
     const st = document.getElementById('geoStatus');
-    if (st) st.textContent = `Near me · ${planner.radiusKm} km`;
+    if (st) st.textContent = 'Using your location';
     const clr = document.getElementById('geoClear');
     if (clr) clr.style.display = 'block';
     scheduleMapResize();
@@ -1251,30 +1221,15 @@ function initPlannerControls() {
   renderPeriodChips();
   renderSlotChips();
 
-  const slider = document.getElementById('radiusSlider');
-  const label = document.getElementById('radiusLabel');
-  if (slider && label) {
-    slider.value = String(planner.radiusKm);
-    label.textContent = String(planner.radiusKm);
-  }
-
   if (plannerEventsBound) return;
   plannerEventsBound = true;
 
-  if (slider && label) {
-    slider.addEventListener('input', () => {
-      planner.radiusKm = parseInt(slider.value, 10);
-      label.textContent = String(planner.radiusKm);
-      filterVenues();
-    });
-  }
-
   document.getElementById('geoBtn')?.addEventListener('click', () => {
-    requestGeolocation({ setDefaultRadius: planner.userLat == null });
+    requestGeolocation();
   });
 
   document.getElementById('locateFab')?.addEventListener('click', () => {
-    requestGeolocation({ setDefaultRadius: planner.userLat == null });
+    requestGeolocation();
   });
 
   document.getElementById('geoClear')?.addEventListener('click', clearUserLocation);
@@ -1419,17 +1374,15 @@ function filterVenues() {
       return false;
     }
 
-    if (hasUser) {
-      if (!v.coords) return false;
-      const d = haversineKm(planner.userLat, planner.userLng, v.coords[0], v.coords[1]);
-      v._distanceKm = d;
-      if (d > planner.radiusKm) return false;
+    if (hasUser && v.coords) {
+      v._distanceKm = haversineKm(
+        planner.userLat,
+        planner.userLng,
+        v.coords[0],
+        v.coords[1]
+      );
     } else {
-      if (v.coords) {
-        v._distanceKm = null;
-      } else {
-        v._distanceKm = null;
-      }
+      v._distanceKm = null;
     }
 
     if (strictHours) {
