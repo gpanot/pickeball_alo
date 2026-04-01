@@ -10,7 +10,7 @@ Simple view: available / booked / maintenance. Staff can block courts without it
 3
 Open play session creation
 Manager creates a session: time, slots, level, entry fee. Auto-closes when full. No competition yet — just social play.
-4
+4 
 Staff check-in + no-show tracking
 Mark who actually showed. Feeds trust score for open play participants over time.
 5
@@ -19,9 +19,11 @@ Daily view: court revenue + F&B + coaching commissions. Single number owner sees
 
 
 Player
-6
+
+6 
 Credit wallet moat
 Top up once (100k / 200k / 500k via VietQR). Spends on courts, coaches, drinks, open play. No re-entry of payment ever.
+
 7
 Court discovery with price filter
 Filter by: sport, price range, distance, available now, indoor/outdoor. Kills Alobo's biggest UX problem immediately.
@@ -35,6 +37,16 @@ Player sees: tonight's sessions near them, spots left, level, price. One tap to 
 Booking history + receipts
 Full log of all transactions. Downloadable. Useful for expats and corporate reimbursements.
 
+
+
+
+EXCLUDE FOR NOW:
+
+Player
+
+6 NO NOW
+Credit wallet moat
+Top up once (100k / 200k / 500k via VietQR). Spends on courts, coaches, drinks, open play. No re-entry of payment ever.
 
 Phase 2 — 3 to 6 months
 

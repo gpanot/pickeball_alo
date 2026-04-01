@@ -3,9 +3,9 @@ import type { Metadata, Viewport } from 'next';
 import './globals.css';
 
 export const metadata: Metadata = {
-  title: 'Court Map — Pickleball Vietnam',
+  title: 'CourtMap — Pickleball Vietnam',
   description:
-    'Find pickleball courts in Vietnam — map, prices, filters, near me.',
+    'Find, compare, and book pickleball courts in Vietnam — map, prices, availability, near you.',
   appleWebApp: {
     capable: true,
     statusBarStyle: 'black-translucent',
@@ -21,7 +21,7 @@ export const viewport: Viewport = {
   width: 'device-width',
   initialScale: 1,
   viewportFit: 'cover',
-  themeColor: '#0D0D0D',
+  themeColor: '#0a0a0a',
 };
 
 export default function RootLayout({
@@ -31,6 +31,12 @@ export default function RootLayout({
 }>) {
   return (
     <html lang="en">
+      <head>
+        <link
+          href="https://fonts.googleapis.com/css2?family=DM+Sans:wght@400;500;600;700;800;900&family=Archivo+Black&display=swap"
+          rel="stylesheet"
+        />
+      </head>
       <body className="courtmap-body">{children}</body>
     </html>
   );

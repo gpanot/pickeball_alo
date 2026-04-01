@@ -6,5 +6,12 @@ node_modules/
 .next/
 out/
 
+# Environment
+.env
+.env.local
+.env.production.local
+
 # Scraper output (regenerate locally; app reads public/courts.json)
 scraper/output/
+
+/lib/generated/prisma

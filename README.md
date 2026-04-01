@@ -32,6 +32,19 @@ npm start
 
 Import the repo and use the **Next.js** preset (default build: `next build`, output: `.next`). No custom rewrite is required; `/` is the app.
 
+`vercel.json` sets `"framework": "nextjs"` so the project is not treated as a static export.
+
+### If you see `404: NOT_FOUND` after a successful build
+
+In the Vercel project **Settings → General → Build & Development**:
+
+- **Framework Preset:** Next.js
+- **Root Directory:** `.` (or leave empty), unless the app lives in a subfolder
+- **Build Command:** default (`next build`) or leave empty
+- **Output Directory:** **leave empty** — do not set `public`, `.`, or `out` unless you use `output: 'export'`. An old “static site” Output Directory is the most common cause of 404.
+
+Redeploy after changing settings.
+
 ## Data
 
 Canonical file for the running app: **`public/courts.json`**.

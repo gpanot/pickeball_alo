@@ -1,0 +1,90 @@
+generator client {
+  provider = "prisma-client"
+  output   = "../lib/generated/prisma"
+}
+
+datasource db {
+  provider = "postgresql"
+  url      = env("DATABASE_URL")
+}
+
+model Venue {
+  id           String    @id @default(cuid())
+  name         String
+  address      String
+  lat          Float
+  lng          Float
+  phone        String?
+  hours        String?
+  rating       Float?
+  reviewCount  Int       @default(0)
+  priceMin     Int?
+  priceMax     Int?
+  tags         String[]
+  amenities    String[]
+  images       String[]
+  facebookUrl  String?
+  instagramUrl String?
+  tiktokUrl    String?
+  googleUrl    String?
+  courts       Court[]
+  bookings     Booking[]
+  createdAt    DateTime  @default(now())
+  updatedAt    DateTime  @updatedAt
+}
+
+model Court {
+  id          String     @id @default(cuid())
+  venueId     String
+  venue       Venue      @relation(fields: [venueId], references: [id], onDelete: Cascade)
+  name        String
+  note        String?
+  isAvailable Boolean    @default(true)
+  slots       TimeSlot[]
+
+  @@index([venueId])
+}
+
+model TimeSlot {
+  id       String  @id @default(cuid())
+  courtId  String
+  court    Court   @relation(fields: [courtId], references: [id], onDelete: Cascade)
+  date     String
+  time     String
+  price    Int
+  isBooked Boolean @default(false)
+
+  @@index([courtId, date])
+}
+
+model Booking {
+  id           String   @id @default(cuid())
+  orderId      String   @unique @default(cuid())
+  venueId      String
+  venue        Venue    @relation(fields: [venueId], references: [id])
+  venueName    String
+  venuePhone   String?
+  venueAddress String?
+  userId       String
+  userName     String
+  userPhone    String
+  date         String
+  slots        Json
+  totalPrice   Int
+  notes        String?
+  status       String   @default("pending")
+  createdAt    DateTime @default(now())
+  updatedAt    DateTime @updatedAt
+
+  @@index([userId])
+  @@index([venueId])
+}
+
+model UserProfile {
+  id          String   @id @default(cuid())
+  name        String
+  phone       String   @unique
+  savedVenues String[]
+  createdAt   DateTime @default(now())
+  updatedAt   DateTime @updatedAt
+}

@@ -5,11 +5,20 @@
     "dev": "next dev",
     "build": "next build",
     "start": "next start",
-    "lint": "next lint"
+    "lint": "next lint",
+    "db:seed": "npx tsx prisma/seed.ts",
+    "db:migrate": "npx prisma migrate dev",
+    "db:generate": "npx prisma generate"
+  },
+  "prisma": {
+    "seed": "npx tsx prisma/seed.ts"
   },
   "dependencies": {
+    "@prisma/client": "^6.19.2",
+    "dotenv": "^17.3.1",
     "leaflet": "^1.9.4",
     "next": "^15.1.0",
+    "prisma": "^6.19.2",
     "react": "^19.0.0",
     "react-dom": "^19.0.0"
   },
@@ -20,6 +29,7 @@
     "@types/react-dom": "^19.0.0",
     "eslint": "^9.16.0",
     "eslint-config-next": "^15.1.0",
+    "tsx": "^4.21.0",
     "typescript": "^5.7.0"
   }
 }
