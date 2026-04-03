@@ -2,6 +2,7 @@
 
 import React from 'react';
 import { SearchIcon } from '@/components/ui/Icons';
+import BookHomeTopBar from '@/components/search/BookHomeTopBar';
 import SearchFormFields from '@/components/search/SearchFormFields';
 import type { ThemeTokens } from '@/lib/theme';
 
@@ -11,6 +12,8 @@ interface SearchScreenProps {
   selectedDuration: number;
   selectedTime: number;
   userName: string;
+  /** Total venues in DB (from /api/venues/count); shown next to the logo. */
+  catalogVenueCount?: number | null;
   onSearchQueryChange: (q: string) => void;
   onDateChange: (i: number) => void;
   onDurationChange: (i: number) => void;
@@ -20,58 +23,19 @@ interface SearchScreenProps {
   t: ThemeTokens;
 }
 
-function profileInitial(name: string): string {
-  const s = name.trim();
-  if (!s) return '?';
-  return s.charAt(0).toUpperCase();
-}
-
 export default function SearchScreen({
-  searchQuery, selectedDate, selectedDuration, selectedTime, userName,
+  searchQuery, selectedDate, selectedDuration, selectedTime, userName, catalogVenueCount,
   onSearchQueryChange, onDateChange, onDurationChange, onTimeChange,
   onSearch, onOpenProfile, t,
 }: SearchScreenProps) {
   return (
     <div style={{ minHeight: '100%', padding: '0 0 160px', animation: 'fadeIn 0.3s ease' }}>
-      <div
-        style={{
-          position: 'sticky',
-          top: 0,
-          zIndex: 60,
-          background: t.bg,
-          borderBottom: `1px solid ${t.border}`,
-          padding: '10px 16px',
-          display: 'flex',
-          alignItems: 'center',
-          justifyContent: 'space-between',
-        }}
-      >
-        <div style={{ fontFamily: "'Archivo Black','Impact',sans-serif", fontSize: 18, fontWeight: 900, letterSpacing: -0.5, color: t.text }}>
-          <span style={{ color: t.accent }}>COURT</span>MAP
-        </div>
-        <button
-          type="button"
-          onClick={onOpenProfile}
-          aria-label="Open profile"
-          style={{
-            width: 40,
-            height: 40,
-            borderRadius: '50%',
-            background: t.accentBgStrong,
-            border: `2px solid ${t.accent}`,
-            color: t.accent,
-            fontWeight: 800,
-            fontSize: 16,
-            cursor: 'pointer',
-            fontFamily: 'inherit',
-            display: 'flex',
-            alignItems: 'center',
-            justifyContent: 'center',
-          }}
-        >
-          {profileInitial(userName)}
-        </button>
-      </div>
+      <BookHomeTopBar
+        catalogVenueCount={catalogVenueCount}
+        userName={userName}
+        onOpenProfile={onOpenProfile}
+        t={t}
+      />
 
       <div style={{ padding: '8px 20px 0', background: `linear-gradient(180deg,${t.accentBg} 0%,transparent 85%)` }} />
       <div style={{ padding: '0 20px' }}>

@@ -9,28 +9,76 @@ datasource db {
 }
 
 model Venue {
-  id           String    @id @default(cuid())
-  name         String
-  address      String
-  lat          Float
-  lng          Float
-  phone        String?
-  hours        String?
-  rating       Float?
-  reviewCount  Int       @default(0)
-  priceMin     Int?
-  priceMax     Int?
-  tags         String[]
-  amenities    String[]
-  images       String[]
-  facebookUrl  String?
-  instagramUrl String?
-  tiktokUrl    String?
-  googleUrl    String?
-  courts       Court[]
-  bookings     Booking[]
-  createdAt    DateTime  @default(now())
-  updatedAt    DateTime  @updatedAt
+  id               String          @id @default(cuid())
+  name             String
+  address          String
+  lat              Float
+  lng              Float
+  phone            String?
+  hours            String?
+  rating           Float?
+  reviewCount      Int             @default(0)
+  priceMin         Int?
+  priceMax         Int?
+  tags             String[]
+  amenities        String[]
+  images           String[]
+  facebookUrl      String?
+  instagramUrl     String?
+  tiktokUrl        String?
+  googleUrl        String?
+  adminPin         String?
+  hasMemberPricing Boolean         @default(false)
+  /// When true, player UI shows 30-minute bookable slots at half the table’s hourly rate. When false, hourly slots at full hourly rate (DB still stores 30-minute rows).
+  use30MinSlots    Boolean         @default(true)
+  courts           Court[]
+  bookings         Booking[]
+  pricingTables    PricingTable[]
+  dateOverrides    DateOverride[]
+  payments         VenuePayment[]
+  createdAt        DateTime        @default(now())
+  updatedAt        DateTime        @updatedAt
+}
+
+model VenuePayment {
+  id            String  @id @default(cuid())
+  venueId       String
+  venue         Venue   @relation(fields: [venueId], references: [id], onDelete: Cascade)
+  bank          String
+  accountName   String
+  accountNumber String
+  qrImageUrl    String?
+  sortOrder     Int     @default(0)
+
+  @@index([venueId])
+}
+
+/// Structured pricing: time bands with walk-in (and optional member) VND prices.
+model PricingTable {
+  id        String   @id @default(cuid())
+  venueId   String
+  venue     Venue    @relation(fields: [venueId], references: [id], onDelete: Cascade)
+  name      String
+  dayTypes  String[]
+  rows      Json
+  sortOrder Int      @default(0)
+  createdAt DateTime @default(now())
+  updatedAt DateTime @updatedAt
+
+  @@index([venueId])
+}
+
+/// Force a calendar date to use holiday/weekend (or custom) pricing resolution.
+model DateOverride {
+  id      String  @id @default(cuid())
+  venueId String
+  venue   Venue   @relation(fields: [venueId], references: [id], onDelete: Cascade)
+  date    String
+  dayType String
+  note    String?
+
+  @@unique([venueId, date])
+  @@index([venueId])
 }
 
 model Court {
@@ -46,14 +94,16 @@ model Court {
 }
 
 model TimeSlot {
-  id       String  @id @default(cuid())
-  courtId  String
-  court    Court   @relation(fields: [courtId], references: [id], onDelete: Cascade)
-  date     String
-  time     String
-  price    Int
-  isBooked Boolean @default(false)
+  id          String @id @default(cuid())
+  courtId     String
+  court       Court  @relation(fields: [courtId], references: [id], onDelete: Cascade)
+  date        String
+  time        String
+  price       Int
+  memberPrice Int?
+  isBooked    Boolean @default(false)
 
+  @@unique([courtId, date, time])
   @@index([courtId, date])
 }
 
@@ -72,6 +122,9 @@ model Booking {
   slots        Json
   totalPrice   Int
   notes        String?
+  adminNote    String?
+  reviewedAt   DateTime?
+  reviewedBy   String?
   status       String   @default("pending")
   createdAt    DateTime @default(now())
   updatedAt    DateTime @updatedAt

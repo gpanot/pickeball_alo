@@ -1,21 +1,23 @@
 'use client';
 
 import React from 'react';
-import { SearchIcon, HeartIcon, CalendarIcon } from '@/components/ui/Icons';
+import { SearchIcon, PinIcon, HeartIcon, CalendarIcon } from '@/components/ui/Icons';
 import type { ThemeTokens } from '@/lib/theme';
 import type { Screen } from '@/lib/types';
 
 interface BottomNavProps {
   screen: Screen;
   onBook: () => void;
+  onMaps: () => void;
   onSaved: () => void;
   onMyBookings: () => void;
   savedCount: number;
   t: ThemeTokens;
 }
 
-export default function BottomNav({ screen, onBook, onSaved, onMyBookings, savedCount, t }: BottomNavProps) {
+export default function BottomNav({ screen, onBook, onMaps, onSaved, onMyBookings, savedCount, t }: BottomNavProps) {
   const bookActive = screen === 'search' || screen === 'results' || screen === 'map';
+  const mapsActive = screen === 'maps';
   const savedActive = screen === 'saved';
   const bookingsActive = screen === 'bookings';
 
@@ -56,6 +58,12 @@ export default function BottomNav({ screen, onBook, onSaved, onMyBookings, saved
             <SearchIcon size={22} />
           </span>
           <span style={{ fontSize: 10, fontWeight: 700, letterSpacing: 0.3 }}>Book</span>
+        </button>
+        <button type="button" onClick={onMaps} style={item(mapsActive)}>
+          <span style={{ opacity: mapsActive ? 1 : 0.7 }}>
+            <PinIcon size={22} />
+          </span>
+          <span style={{ fontSize: 10, fontWeight: 700, letterSpacing: 0.3 }}>Maps</span>
         </button>
         <button type="button" onClick={onSaved} style={{ ...item(savedActive), position: 'relative' }}>
           <span style={{ opacity: savedActive ? 1 : 0.7 }}>

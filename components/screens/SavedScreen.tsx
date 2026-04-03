@@ -12,12 +12,14 @@ interface SavedScreenProps {
   onBack: () => void;
   onToggleSaved: (id: string, e: React.MouseEvent) => void;
   onOpenVenue: (v: VenueResult) => void;
+  /** Book pill: open when/where sheet, then primary action opens this venue’s detail with those picks. */
+  onOpenBookSearch: (venue: VenueResult) => void;
   /** Extra bottom padding when Map/Saved pills are shown (results flow) */
   bottomInsetForPills?: boolean;
   t: ThemeTokens;
 }
 
-export default function SavedScreen({ venues, savedIds, onBack, onToggleSaved, onOpenVenue, bottomInsetForPills, t }: SavedScreenProps) {
+export default function SavedScreen({ venues, savedIds, onBack, onToggleSaved, onOpenVenue, onOpenBookSearch, bottomInsetForPills, t }: SavedScreenProps) {
   const savedVenues = venues.filter((v) => savedIds.has(v.id));
   const pb = bottomInsetForPills ? 100 : 88;
 
@@ -49,6 +51,8 @@ export default function SavedScreen({ venues, savedIds, onBack, onToggleSaved, o
               isSaved={true}
               onToggleSaved={onToggleSaved}
               onClick={() => onOpenVenue(v)}
+              bookPill
+              onBookPillClick={() => onOpenBookSearch(v)}
               t={t}
             />
           ))

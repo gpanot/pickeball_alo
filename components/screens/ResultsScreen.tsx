@@ -3,6 +3,12 @@
 import React from 'react';
 import ResultsSearchTopBar from '@/components/search/ResultsSearchTopBar';
 import VenueCard from '@/components/venue/VenueCard';
+import {
+  getBookTimeShortLabel,
+  pickSlotsForSearch,
+  START_HOUR_OPTIONS,
+  durationIndexToHalfHourCount,
+} from '@/lib/formatters';
 import type { ThemeTokens } from '@/lib/theme';
 import type { VenueResult, SortMode } from '@/lib/types';
 
@@ -19,6 +25,7 @@ interface ResultsScreenProps {
   onSort: (s: SortMode) => void;
   onToggleSaved: (id: string, e: React.MouseEvent) => void;
   onOpenVenue: (v: VenueResult) => void;
+  onQuickBookVenue: (v: VenueResult) => void;
   onSearchQueryChange: (q: string) => void;
   onDateChange: (i: number) => void;
   onDurationChange: (i: number) => void;
@@ -29,7 +36,7 @@ interface ResultsScreenProps {
 
 export default function ResultsScreen({
   venues, savedIds, sortBy, selectedDate, selectedDuration, selectedTime,
-  searchQuery, loading, onBack, onSort, onToggleSaved, onOpenVenue,
+  searchQuery, loading, onBack, onSort, onToggleSaved, onOpenVenue, onQuickBookVenue,
   onSearchQueryChange, onDateChange, onDurationChange, onTimeChange,
   onRefetchSearch, t,
 }: ResultsScreenProps) {
@@ -65,16 +72,24 @@ export default function ResultsScreen({
             <div style={{ fontSize: 14 }}>Try adjusting your search criteria</div>
           </div>
         ) : (
-          venues.map((v) => (
-            <VenueCard
-              key={v.id}
-              venue={v}
-              isSaved={savedIds.has(v.id)}
-              onToggleSaved={onToggleSaved}
-              onClick={() => onOpenVenue(v)}
-              t={t}
-            />
-          ))
+          venues.map((v) => {
+            const hour = START_HOUR_OPTIONS[selectedTime]?.hour ?? 9;
+            const n = durationIndexToHalfHourCount(selectedDuration);
+            const preset = pickSlotsForSearch(v, hour, n);
+            const bookLabel = getBookTimeShortLabel(selectedTime);
+            return (
+              <VenueCard
+                key={v.id}
+                venue={v}
+                isSaved={savedIds.has(v.id)}
+                onToggleSaved={onToggleSaved}
+                onClick={() => onOpenVenue(v)}
+                bookButtonLabel={preset.size > 0 ? bookLabel : undefined}
+                onBookClick={preset.size > 0 ? () => onQuickBookVenue(v) : undefined}
+                t={t}
+              />
+            );
+          })
         )}
       </div>
     </div>

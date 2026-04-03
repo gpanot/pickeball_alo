@@ -12,10 +12,27 @@ interface VenueCardProps {
   isSaved: boolean;
   onToggleSaved: (id: string, e: React.MouseEvent) => void;
   onClick: () => void;
+  /** Shown on list cards only; opens confirm booking when `onBookClick` is set. */
+  bookButtonLabel?: string;
+  onBookClick?: (e: React.MouseEvent) => void;
+  /** Compact accent pill (e.g. Saved list → edit search). */
+  bookPill?: boolean;
+  onBookPillClick?: (e: React.MouseEvent) => void;
   t: ThemeTokens;
 }
 
-export default function VenueCard({ venue, compact, isSaved, onToggleSaved, onClick, t }: VenueCardProps) {
+export default function VenueCard({
+  venue,
+  compact,
+  isSaved,
+  onToggleSaved,
+  onClick,
+  bookButtonLabel,
+  onBookClick,
+  bookPill,
+  onBookPillClick,
+  t,
+}: VenueCardProps) {
   const allSlots = venue.courts.flatMap((c) => c.slots);
   const allBooked = allSlots.length > 0 && allSlots.every((s) => s.isBooked);
 
@@ -90,13 +107,40 @@ export default function VenueCard({ venue, compact, isSaved, onToggleSaved, onCl
           </div>
         </div>
         {!compact && (
-          <div style={{ display: 'flex', gap: 12, marginTop: 10 }}>
-            <span style={{ display: 'flex', alignItems: 'center', gap: 4, fontSize: 12, color: t.textSec }}>
-              <PinIcon /> {venue.distance ?? '—'} km
-            </span>
-            <span style={{ display: 'flex', alignItems: 'center', gap: 4, fontSize: 12, color: t.textSec }}>
-              <CourtIcon /> {venue.courts.length} courts
-            </span>
+          <div style={{ display: 'flex', alignItems: 'center', justifyContent: 'space-between', gap: 10, marginTop: 10, flexWrap: 'wrap' }}>
+            <div style={{ display: 'flex', gap: 12 }}>
+              <span style={{ display: 'flex', alignItems: 'center', gap: 4, fontSize: 12, color: t.textSec }}>
+                <PinIcon /> {venue.distance ?? '—'} km
+              </span>
+              <span style={{ display: 'flex', alignItems: 'center', gap: 4, fontSize: 12, color: t.textSec }}>
+                <CourtIcon /> {venue.courts.length} courts
+              </span>
+            </div>
+            {bookPill && onBookPillClick && (
+              <button
+                type="button"
+                onClick={(e) => {
+                  e.stopPropagation();
+                  onBookPillClick(e);
+                }}
+                style={{
+                  padding: '6px 14px',
+                  borderRadius: 20,
+                  border: 'none',
+                  cursor: 'pointer',
+                  fontFamily: 'inherit',
+                  fontWeight: 800,
+                  fontSize: 12,
+                  letterSpacing: 0.2,
+                  background: t.accent,
+                  color: '#000',
+                  flexShrink: 0,
+                  boxShadow: `0 2px 10px ${t.accent}44`,
+                }}
+              >
+                Book
+              </button>
+            )}
           </div>
         )}
         {!compact && venue.tags.length > 0 && (
@@ -111,6 +155,31 @@ export default function VenueCard({ venue, compact, isSaved, onToggleSaved, onCl
               </span>
             ))}
           </div>
+        )}
+        {!compact && bookButtonLabel && onBookClick && (
+          <button
+            type="button"
+            onClick={(e) => {
+              e.stopPropagation();
+              onBookClick(e);
+            }}
+            style={{
+              marginTop: 12,
+              width: '100%',
+              padding: '12px 16px',
+              borderRadius: 12,
+              fontFamily: 'inherit',
+              fontWeight: 800,
+              fontSize: 14,
+              border: 'none',
+              cursor: 'pointer',
+              background: t.accent,
+              color: '#000',
+              boxShadow: `0 4px 16px ${t.accent}44`,
+            }}
+          >
+            Book {bookButtonLabel}
+          </button>
         )}
       </div>
     </div>

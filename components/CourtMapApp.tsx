@@ -11,10 +11,18 @@ import VenueDetail from '@/components/venue/VenueDetail';
 import ThemeToggle from '@/components/ui/ThemeToggle';
 import BottomNav from '@/components/ui/BottomNav';
 import ResultsFlowPills from '@/components/ui/ResultsFlowPills';
+import SearchCriteriaSheet from '@/components/search/SearchCriteriaSheet';
 import { darkTheme, lightTheme } from '@/lib/theme';
 import { useLocalStorage } from '@/lib/useLocalStorage';
-import { searchVenues, getBookings, cancelBooking } from '@/lib/api';
-import { getNextDays, toLocalDateKey, DURATIONS } from '@/lib/formatters';
+import { searchVenues, getVenue, getBookings, cancelBooking, getVenueCatalogCount } from '@/lib/api';
+import {
+  getNextDays,
+  toLocalDateKey,
+  DURATIONS,
+  START_HOUR_OPTIONS,
+  durationIndexToHalfHourCount,
+  pickSlotsForSearch,
+} from '@/lib/formatters';
 import type { VenueResult, BookingResult, Screen, SortMode } from '@/lib/types';
 
 const MapScreenLazy = dynamic(() => import('@/components/screens/MapScreen'), {
@@ -46,13 +54,20 @@ export default function CourtMapApp() {
   const [sortBy, setSortBy] = useState<SortMode>('distance');
 
   const [venues, setVenues] = useState<VenueResult[]>([]);
+  const [catalogVenueCount, setCatalogVenueCount] = useState<number | null>(null);
   const [loading, setLoading] = useState(false);
   const [bookings, setBookings] = useState<BookingResult[]>([]);
   const [bookingsLoading, setBookingsLoading] = useState(false);
 
   const [detailVenue, setDetailVenue] = useState<VenueResult | null>(null);
   const [detailVisible, setDetailVisible] = useState(false);
+  const [detailJumpToConfirm, setDetailJumpToConfirm] = useState(false);
+  const [detailRefreshing, setDetailRefreshing] = useState(false);
   const [selectedSlots, setSelectedSlots] = useState<Set<string>>(new Set());
+  const [savedSearchOpen, setSavedSearchOpen] = useState(false);
+  const [savedSearchApplying, setSavedSearchApplying] = useState(false);
+  /** Venue whose Book pill opened the sheet (drives “Book for …” → detail). */
+  const [savedBookVenue, setSavedBookVenue] = useState<VenueResult | null>(null);
 
   const t = dark ? darkTheme : lightTheme;
   const savedSet = new Set(savedIds);
@@ -63,9 +78,74 @@ export default function CourtMapApp() {
     }
   }, [userId, setUserId]);
 
+  useEffect(() => {
+    getVenueCatalogCount()
+      .then(setCatalogVenueCount)
+      .catch(() => setCatalogVenueCount(null));
+  }, []);
+
+  useEffect(() => {
+    if (screen !== 'saved') {
+      setSavedSearchOpen(false);
+      setSavedBookVenue(null);
+    }
+  }, [screen]);
+
+  /** Keep saved hearts visible after refresh: IDs live in localStorage but `venues` starts empty until a search. */
+  useEffect(() => {
+    if (!Array.isArray(savedIds) || savedIds.length === 0) return;
+    const inList = new Set(venues.map((v) => v.id));
+    const missing = savedIds.filter((id) => !inList.has(id));
+    if (missing.length === 0) return;
+
+    const dates = getNextDays(7);
+    const dateStr =
+      selectedDate < dates.length ? toLocalDateKey(dates[selectedDate]) : toLocalDateKey(new Date());
+
+    let cancelled = false;
+    void (async () => {
+      try {
+        const loaded = await Promise.all(missing.map((id) => getVenue(id, dateStr)));
+        if (cancelled) return;
+        setVenues((prev) => {
+          const byId = new Map(prev.map((v) => [v.id, v]));
+          let changed = false;
+          for (const v of loaded) {
+            if (!v?.id) continue;
+            const prevV = byId.get(v.id);
+            if (prevV !== v) {
+              byId.set(v.id, v);
+              changed = true;
+            }
+          }
+          if (!changed) return prev;
+          return Array.from(byId.values());
+        });
+      } catch (err) {
+        console.error('Failed to hydrate saved courts:', err);
+      }
+    })();
+
+    return () => {
+      cancelled = true;
+    };
+  }, [savedIds, venues, selectedDate]);
+
+  const closeSavedBookSheet = useCallback(() => {
+    setSavedSearchOpen(false);
+    setSavedBookVenue(null);
+  }, []);
+
+  const openSavedBookSheet = useCallback((v: VenueResult) => {
+    setSavedBookVenue(v);
+    setSavedSearchOpen(true);
+  }, []);
+
   const goBookTab = useCallback(() => {
-    if (venues.length > 0) setScreen('results');
-    else setScreen('search');
+    setScreen((prev) => {
+      if (prev === 'maps') return 'search';
+      return venues.length > 0 ? 'results' : 'search';
+    });
   }, [venues.length]);
 
   const goSavedTab = useCallback(() => {
@@ -112,6 +192,34 @@ export default function CourtMapApp() {
     }
   }, [searchQuery, selectedDate, selectedDuration, sortBy]);
 
+  /** Full catalog for Maps tab (no text query, worldwide radius). Slots use today’s date. */
+  const refetchExploreVenues = useCallback(async () => {
+    setLoading(true);
+    try {
+      const dateStr = toLocalDateKey(new Date());
+      const results = await searchVenues({
+        query: '',
+        date: dateStr,
+        duration: '1h',
+        sort: 'distance',
+        lat: 10.79,
+        lng: 106.71,
+        radius: 20_000,
+      });
+      setVenues(results);
+    } catch (err) {
+      console.error('Explore map load failed:', err);
+      setVenues([]);
+    } finally {
+      setLoading(false);
+    }
+  }, []);
+
+  const goMapsTab = useCallback(() => {
+    setScreen('maps');
+    void refetchExploreVenues();
+  }, [refetchExploreVenues]);
+
   const handleSearch = useCallback(async () => {
     setScreen('results');
     await refetchVenues();
@@ -136,14 +244,22 @@ export default function CourtMapApp() {
     });
   }, [setSavedIds]);
 
-  const openDetail = useCallback((v: VenueResult) => {
-    setDetailVenue(v);
-    setSelectedSlots(new Set());
-    setTimeout(() => setDetailVisible(true), 10);
-  }, []);
+  const openDetail = useCallback(
+    (v: VenueResult, opts?: { jumpToConfirm?: boolean }) => {
+      const hour = START_HOUR_OPTIONS[selectedTime]?.hour ?? 9;
+      const n = durationIndexToHalfHourCount(selectedDuration);
+      const preset = pickSlotsForSearch(v, hour, n);
+      setDetailVenue(v);
+      setSelectedSlots(preset);
+      setDetailJumpToConfirm(Boolean(opts?.jumpToConfirm && preset.size > 0));
+      setTimeout(() => setDetailVisible(true), 10);
+    },
+    [selectedTime, selectedDuration],
+  );
 
   const closeDetail = useCallback(() => {
     setDetailVisible(false);
+    setDetailJumpToConfirm(false);
     setTimeout(() => setDetailVenue(null), 300);
   }, []);
 
@@ -209,6 +325,60 @@ export default function CourtMapApp() {
     setScreen('results');
   }, []);
 
+  const handleSavedBookConfirm = useCallback(async () => {
+    const target = savedBookVenue;
+    if (!target) return;
+    setSavedSearchApplying(true);
+    try {
+      const days = getNextDays(7);
+      const dateStr =
+        selectedDate < days.length ? toLocalDateKey(days[selectedDate]) : toLocalDateKey(new Date());
+      const fresh = await getVenue(target.id, dateStr);
+      const hour = START_HOUR_OPTIONS[selectedTime]?.hour ?? 9;
+      const n = durationIndexToHalfHourCount(selectedDuration);
+      const preset = pickSlotsForSearch(fresh, hour, n);
+      setDetailVenue(fresh);
+      setSelectedSlots(preset);
+      setDetailJumpToConfirm(false);
+      closeSavedBookSheet();
+      void refetchVenues();
+      setTimeout(() => setDetailVisible(true), 10);
+    } catch (err) {
+      console.error('Saved book flow failed:', err);
+    } finally {
+      setSavedSearchApplying(false);
+    }
+  }, [
+    savedBookVenue,
+    selectedDate,
+    selectedTime,
+    selectedDuration,
+    refetchVenues,
+    closeSavedBookSheet,
+  ]);
+
+  const handleDetailAvailabilityDateChange = useCallback(
+    async (dateIndex: number) => {
+      const id = detailVenue?.id;
+      if (!id) return;
+      setSelectedDate(dateIndex);
+      const days = getNextDays(7);
+      const dateStr =
+        dateIndex < days.length ? toLocalDateKey(days[dateIndex]) : toLocalDateKey(new Date());
+      setDetailRefreshing(true);
+      try {
+        const updated = await getVenue(id, dateStr);
+        setDetailVenue(updated);
+        setSelectedSlots(new Set());
+      } catch (err) {
+        console.error('Failed to load venue for date:', err);
+      } finally {
+        setDetailRefreshing(false);
+      }
+    },
+    [detailVenue?.id],
+  );
+
   const dates = getNextDays(7);
   const searchDate = selectedDate < dates.length ? toLocalDateKey(dates[selectedDate]) : toLocalDateKey(new Date());
 
@@ -217,6 +387,7 @@ export default function CourtMapApp() {
   const showBottomNav =
     !detailVisible &&
     (screen === 'search' ||
+      screen === 'maps' ||
       screen === 'bookings' ||
       screen === 'profile' ||
       (screen === 'saved' && !savedViaResultsFlow));
@@ -257,7 +428,7 @@ export default function CourtMapApp() {
       <div
         style={{
           height: '100%',
-          overflowY: screen === 'map' ? 'hidden' : 'auto',
+          overflowY: screen === 'map' || screen === 'maps' ? 'hidden' : 'auto',
           overflowX: 'hidden',
         }}
       >
@@ -268,6 +439,7 @@ export default function CourtMapApp() {
             selectedDuration={selectedDuration}
             selectedTime={selectedTime}
             userName={userName}
+            catalogVenueCount={catalogVenueCount}
             onSearchQueryChange={setSearchQuery}
             onDateChange={setSelectedDate}
             onDurationChange={setSelectedDuration}
@@ -290,7 +462,8 @@ export default function CourtMapApp() {
             onBack={backFromResults}
             onSort={handleSort}
             onToggleSaved={toggleSaved}
-            onOpenVenue={openDetail}
+            onOpenVenue={(v) => openDetail(v)}
+            onQuickBookVenue={(v) => openDetail(v, { jumpToConfirm: true })}
             onSearchQueryChange={setSearchQuery}
             onDateChange={setSelectedDate}
             onDurationChange={setSelectedDuration}
@@ -299,7 +472,7 @@ export default function CourtMapApp() {
             t={t}
           />
         )}
-        {screen === 'map' && (
+        {(screen === 'map' || screen === 'maps') && (
           <MapScreenLazy
             venues={venues}
             savedIds={savedSet}
@@ -319,6 +492,12 @@ export default function CourtMapApp() {
             onTimeChange={setSelectedTime}
             onRefetchSearch={refetchVenues}
             t={t}
+            userAreaRadiusKm={screen === 'maps' ? 5 : undefined}
+            hasFlowPills={screen === 'map'}
+            bookHomeTopBar={screen === 'maps'}
+            catalogVenueCount={catalogVenueCount}
+            userName={userName}
+            onOpenProfile={() => setScreen('profile')}
           />
         )}
         {screen === 'saved' && (
@@ -328,6 +507,7 @@ export default function CourtMapApp() {
             onBack={savedViaResultsFlow ? backFromSavedInResultsFlow : backFromSavedOrBookings}
             onToggleSaved={toggleSaved}
             onOpenVenue={openDetail}
+            onOpenBookSearch={openSavedBookSheet}
             bottomInsetForPills={savedViaResultsFlow}
             t={t}
           />
@@ -359,6 +539,7 @@ export default function CourtMapApp() {
         <BottomNav
           screen={screen}
           onBook={goBookTab}
+          onMaps={goMapsTab}
           onSaved={goSavedTab}
           onMyBookings={goMyBookingsTab}
           savedCount={savedSet.size}
@@ -376,13 +557,37 @@ export default function CourtMapApp() {
         />
       )}
 
+      {screen === 'saved' && (
+        <SearchCriteriaSheet
+          open={savedSearchOpen}
+          onClose={closeSavedBookSheet}
+          onApply={handleSavedBookConfirm}
+          applying={savedSearchApplying}
+          t={t}
+          bookAtVenueName={savedBookVenue?.name ?? null}
+          searchQuery={searchQuery}
+          selectedDate={selectedDate}
+          selectedDuration={selectedDuration}
+          selectedTime={selectedTime}
+          onSearchQueryChange={setSearchQuery}
+          onDateChange={setSelectedDate}
+          onDurationChange={setSelectedDuration}
+          onTimeChange={setSelectedTime}
+        />
+      )}
+
       {detailVenue && (
         <VenueDetail
           venue={detailVenue}
           visible={detailVisible}
+          initialJumpToBooking={detailJumpToConfirm}
           selectedSlots={selectedSlots}
           isSaved={savedSet.has(detailVenue.id)}
           searchDate={searchDate}
+          selectedDateIndex={selectedDate}
+          onAvailabilityDateChange={handleDetailAvailabilityDateChange}
+          detailDateLoading={detailRefreshing}
+          selectedTimeIndex={selectedTime}
           userId={userId}
           userName={userName}
           userPhone={userPhone}

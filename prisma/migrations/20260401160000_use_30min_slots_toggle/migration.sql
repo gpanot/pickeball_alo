@@ -1,0 +1,2 @@
+-- AlterTable
+ALTER TABLE "Venue" ADD COLUMN "use30MinSlots" BOOLEAN NOT NULL DEFAULT true;

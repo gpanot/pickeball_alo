@@ -1,3 +1,27 @@
+/** Structured venue pricing (time bands, walk-in + optional member). */
+export interface StructuredPricingRow {
+  startTime: string;
+  endTime: string;
+  walkIn: number;
+  member: number | null;
+}
+
+export interface StructuredPricingTable {
+  id: string;
+  name: string;
+  dayTypes: string[];
+  rows: StructuredPricingRow[];
+  sortOrder: number;
+}
+
+export interface VenuePaymentResult {
+  id: string;
+  bank: string;
+  accountName: string;
+  accountNumber: string;
+  qrImageUrl: string | null;
+}
+
 export interface VenueResult {
   id: string;
   name: string;
@@ -17,6 +41,11 @@ export interface VenueResult {
   instagramUrl: string | null;
   tiktokUrl: string | null;
   googleUrl: string | null;
+  hasMemberPricing?: boolean;
+  /** false = hourly bookable slots at full hourly rate; true = 30-minute slots at half hourly rate. */
+  use30MinSlots?: boolean;
+  pricingTables?: StructuredPricingTable[] | null;
+  payments?: VenuePaymentResult[];
   distance?: number;
   courts: CourtResult[];
 }
@@ -33,6 +62,7 @@ export interface SlotResult {
   id: string;
   time: string;
   price: number;
+  memberPrice?: number | null;
   isBooked: boolean;
 }
 
@@ -59,6 +89,9 @@ export interface BookingResult {
   slots: BookingSlot[];
   totalPrice: number;
   notes: string | null;
+  adminNote?: string | null;
+  reviewedAt?: string | null;
+  reviewedBy?: string | null;
   status: BookingStatus;
   createdAt: string;
   updatedAt: string;
@@ -73,7 +106,7 @@ export interface UserProfileData {
 
 export type SortMode = 'distance' | 'price' | 'rating';
 export type PeriodKey = 'morning' | 'noon' | 'afternoon' | 'night';
-export type Screen = 'search' | 'results' | 'map' | 'saved' | 'bookings' | 'profile';
+export type Screen = 'search' | 'results' | 'map' | 'maps' | 'saved' | 'bookings' | 'profile';
 
 export interface SearchParams {
   query: string;

@@ -1,6 +1,8 @@
 import { NextRequest, NextResponse } from 'next/server';
 import { prisma } from '@/lib/prisma';
 import { sortSlotsByTime } from '@/lib/formatters';
+import { parsePricingRows } from '@/lib/pricing';
+import { computeCourtSlots, loadVenueSlotBookState } from '@/lib/venue-slots';
 
 export async function GET(
   req: NextRequest,
@@ -12,20 +14,23 @@ export async function GET(
   const venue = await prisma.venue.findUnique({
     where: { id },
     include: {
-      courts: {
-        include: {
-          slots: {
-            where: { date },
-            orderBy: { time: 'asc' },
-          },
-        },
-      },
+      courts: true,
+      pricingTables: { orderBy: { sortOrder: 'asc' } },
+      dateOverrides: true,
+      payments: { orderBy: { sortOrder: 'asc' } },
     },
   });
 
   if (!venue) {
     return NextResponse.json({ error: 'Not found' }, { status: 404 });
   }
+
+  const bookState = await loadVenueSlotBookState(venue.id, date);
+  const pricingLite = venue.pricingTables.map((t) => ({
+    dayTypes: t.dayTypes,
+    sortOrder: t.sortOrder,
+    rows: t.rows,
+  }));
 
   return NextResponse.json({
     id: venue.id,
@@ -46,18 +51,31 @@ export async function GET(
     instagramUrl: venue.instagramUrl,
     tiktokUrl: venue.tiktokUrl,
     googleUrl: venue.googleUrl,
+    hasMemberPricing: venue.hasMemberPricing,
+    use30MinSlots: venue.use30MinSlots,
+    pricingTables: venue.pricingTables.map((t) => ({
+      id: t.id,
+      name: t.name,
+      dayTypes: t.dayTypes,
+      sortOrder: t.sortOrder,
+      rows: parsePricingRows(t.rows),
+    })),
+    payments: venue.payments.map((p) => ({
+      id: p.id,
+      bank: p.bank,
+      accountName: p.accountName,
+      accountNumber: p.accountNumber,
+      qrImageUrl: p.qrImageUrl,
+    })),
     courts: venue.courts.map((c) => ({
       id: c.id,
       name: c.name,
       note: c.note,
       isAvailable: c.isAvailable,
       slots: sortSlotsByTime(
-        c.slots.map((s) => ({
-          id: s.id,
-          time: s.time,
-          price: s.price,
-          isBooked: s.isBooked,
-        })),
+        computeCourtSlots(c, date, pricingLite, venue.dateOverrides, bookState, {
+          use30MinSlots: venue.use30MinSlots,
+        }),
       ),
     })),
   });

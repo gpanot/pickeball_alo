@@ -114,7 +114,7 @@ async function main() {
   console.log(`x-user-app: ${capturedXUserApp.slice(0, 16)}…`);
 
   const API_BASE = 'https://user-global.alobo.vn/v2/user/branch';
-  const endpoints = ['get_core_types', 'get_branch'];
+  const endpoints = ['get_core_types', 'get_branch', 'get_cores', 'get_payments'];
   const XUA_MAX_AGE_MS = 25_000; // refresh every 25s to stay within the ~1min window
 
   // Resume from previous progress
@@ -127,12 +127,14 @@ async function main() {
     } catch {}
   }
 
-  // Filter out already-fetched venues (only keep those with valid data)
+  // Filter out already-fetched venues (only keep those with ALL endpoints)
   const alreadyDone = new Set(
     Object.entries(allPricing)
       .filter(([, v]) => {
-        const ct = v.get_core_types;
-        return Array.isArray(ct) || (ct && !ct.error);
+        return endpoints.every(ep => {
+          const d = v[ep];
+          return d && !d.error;
+        });
       })
       .map(([k]) => k)
   );
@@ -234,12 +236,16 @@ async function main() {
   console.log(`\nSaved: output/pricing_all.json (${fetchedCount} venues, ${errors} errors)`);
 
   // Summary
-  let withPrice = 0, withTargets = 0;
+  let withPrice = 0, withTargets = 0, withCourts = 0, withPayment = 0;
   for (const v of Object.values(allPricing)) {
     const ct = v.get_core_types;
     if (Array.isArray(ct) && ct.length > 0) { withPrice++; if (ct[0].targets) withTargets++; }
+    const gc = v.get_cores;
+    if (gc?.cores?.length > 0) withCourts++;
+    const gp = v.get_payments;
+    if (Array.isArray(gp) && gp.length > 0 && gp[0].accountName) withPayment++;
   }
-  console.log(`With core_types: ${withPrice}  With pricing targets: ${withTargets}`);
+  console.log(`With pricing: ${withPrice}  With courts: ${withCourts}  With bank info: ${withPayment}`);
 
   // Show first venue detail
   const sampleId = pickleIds[0];

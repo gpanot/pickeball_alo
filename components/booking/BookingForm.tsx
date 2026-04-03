@@ -56,7 +56,7 @@ export default function BookingForm({
         slots: selectedSlots.map((s) => ({
           courtName: s.courtName,
           time: s.time,
-          duration: 30,
+          duration: venue.use30MinSlots !== false ? 30 : 60,
           price: s.price,
         })),
         totalPrice,
@@ -78,7 +78,7 @@ export default function BookingForm({
   };
 
   return (
-    <div style={{ padding: '0 20px 140px' }}>
+    <div style={{ padding: '0 20px 32px' }}>
       <div style={{ display: 'flex', alignItems: 'center', gap: 12, marginBottom: 20 }}>
         <button onClick={onBack} style={{ background: 'none', border: 'none', color: t.text, cursor: 'pointer', padding: 4, display: 'flex' }}>
           <BackIcon />

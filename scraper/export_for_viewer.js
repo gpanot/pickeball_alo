@@ -118,6 +118,29 @@ function main() {
       ? (branch.totalStar / branch.totalRating).toFixed(1)
       : null;
 
+    // Courts
+    const coresData = data.get_cores;
+    const courts = [];
+    if (coresData?.cores) {
+      for (const c of coresData.cores) {
+        courts.push({ id: c.id, name: c.name, status: c.status });
+      }
+    }
+
+    // Payment info
+    const paymentsData = data.get_payments;
+    const payments = [];
+    if (Array.isArray(paymentsData)) {
+      for (const p of paymentsData) {
+        payments.push({
+          bank: p.bank || '',
+          accountName: p.accountName || '',
+          accountNumber: p.accountNumber || '',
+          qr: p.qr || '',
+        });
+      }
+    }
+
     venues.push({
       name: gb.name || branch.name || id,
       address: gb.address || branch.address || '',
@@ -130,10 +153,13 @@ function main() {
       ratingCount: branch.totalRating || 0,
       hasVoucher: branch.hasVoucher || false,
       sports: ['pickleball'],
+      courtCount: courts.length,
+      courts,
       pricing_tables: tables.map(t => t.rows),
       pricing_table_names: tables.map(t => t.tableName),
       promotions: [],
       flat_prices: [],
+      payments,
     });
   }
 
@@ -151,8 +177,13 @@ function main() {
 
   const withCoords = venues.filter(v => v.latitude && v.longitude).length;
   const withTables = venues.filter(v => v.pricing_tables.length > 0).length;
+  const withCourts = venues.filter(v => v.courtCount > 0).length;
+  const withPayments = venues.filter(v => v.payments.length > 0).length;
+  const totalCourts = venues.reduce((s, v) => s + v.courtCount, 0);
   console.log(`  With coordinates: ${withCoords}`);
   console.log(`  With pricing tables: ${withTables}`);
+  console.log(`  With courts: ${withCourts} (${totalCourts} total courts)`);
+  console.log(`  With payment info: ${withPayments}`);
 }
 
 main();

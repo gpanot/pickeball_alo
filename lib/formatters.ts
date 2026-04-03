@@ -46,6 +46,18 @@ export function toLocalDateKey(d: Date): string {
   return `${y}-${m}-${day}`;
 }
 
+/** Display ref for staff (MVP: prefix + short slice of stored orderId). */
+export function formatBookingOrderRef(orderId: string): string {
+  const short = orderId.replace(/[^a-zA-Z0-9]/g, '').slice(0, 6).toUpperCase();
+  return short ? `CM-${short}` : orderId;
+}
+
+export function formatVndFull(amount: number): string {
+  return `${new Intl.NumberFormat('vi-VN').format(Math.round(amount))} ₫`;
+}
+
+import type { VenueResult } from '@/lib/types';
+
 /** Minutes from midnight for sorting; `00:00` sorts after 23:30 (end-of-day midnight slot). */
 export function timeStringToSortMinutes(time: string): number {
   const [hs, ms] = time.split(':');
@@ -54,6 +66,41 @@ export function timeStringToSortMinutes(time: string): number {
   if (!Number.isFinite(h) || !Number.isFinite(m)) return 99999;
   if (h === 0 && m === 0) return 24 * 60;
   return h * 60 + m;
+}
+
+/**
+ * Earliest `HH:mm` among selected keys `courtName|time` for this venue’s courts.
+ * Used to scroll the availability strip to the search / pre-picked time.
+ */
+export function earliestSelectedSlotTime(
+  selectedSlots: Set<string>,
+  venueCourtNames: readonly string[],
+): string | null {
+  const courtSet = new Set(venueCourtNames);
+  let bestM: number | null = null;
+  let bestT: string | null = null;
+  for (const key of selectedSlots) {
+    const pipe = key.indexOf('|');
+    if (pipe < 0) continue;
+    const court = key.slice(0, pipe);
+    const time = key.slice(pipe + 1);
+    if (!courtSet.has(court)) continue;
+    const m = timeStringToSortMinutes(time);
+    if (m >= 99999) continue;
+    if (bestM == null || m < bestM) {
+      bestM = m;
+      bestT = time;
+    }
+  }
+  return bestT;
+}
+
+/** First index of a slot at or after `anchorTime`, else 0. */
+export function firstSlotIndexAtOrAfter<T extends { time: string }>(slots: T[], anchorTime: string): number {
+  const anchor = timeStringToSortMinutes(anchorTime);
+  if (anchor >= 99999) return 0;
+  const idx = slots.findIndex((s) => timeStringToSortMinutes(s.time) >= anchor);
+  return idx >= 0 ? idx : 0;
 }
 
 export function sortSlotsByTime<T extends { time: string }>(slots: T[]): T[] {
@@ -94,6 +141,178 @@ export const START_HOUR_OPTIONS: readonly { hour: number; label: string }[] = ((
 
 export function getStartHourLabel(selectedTimeIndex: number): string {
   return START_HOUR_OPTIONS[selectedTimeIndex]?.label ?? '—';
+}
+
+/** Compact label for Book CTAs, e.g. `9am`, `12pm`, `12am`. */
+export function getBookTimeShortLabel(selectedTimeIndex: number): string {
+  const opt = START_HOUR_OPTIONS[selectedTimeIndex];
+  if (!opt) return '';
+  const h = opt.hour;
+  if (h === 0) return '12am';
+  if (h < 12) return `${h}am`;
+  if (h === 12) return '12pm';
+  return `${h - 12}pm`;
+}
+
+/** Number of 30-minute slots for the selected duration chip (matches booking API). */
+export function durationIndexToHalfHourCount(durationIndex: number): number {
+  const d = DURATIONS[durationIndex] ?? '1h';
+  const map: Record<string, number> = {
+    '1h': 2,
+    '1h30': 3,
+    '2h': 4,
+    '2h30': 5,
+    '3h': 6,
+  };
+  return map[d] ?? 2;
+}
+
+function parseTimeParts(time: string): { hour: number; minute: number } | null {
+  const m = time.trim().match(/^(\d{1,2}):(\d{2})$/);
+  if (!m) return null;
+  const hour = parseInt(m[1], 10);
+  const minute = parseInt(m[2], 10);
+  if (!Number.isFinite(hour) || !Number.isFinite(minute)) return null;
+  return { hour, minute };
+}
+
+function slotMinutesFromMidnight(time: string): number | null {
+  const p = parseTimeParts(time);
+  if (!p) return null;
+  if (p.hour === 0 && p.minute === 0) return 24 * 60;
+  return p.hour * 60 + p.minute;
+}
+
+function tryPickConsecutiveHourSlots(
+  venue: VenueResult,
+  startHour: number,
+  hourCount: number,
+): Set<string> {
+  const out = new Set<string>();
+  if (hourCount < 1) return out;
+
+  for (const court of venue.courts) {
+    const sorted = sortSlotsByTime(court.slots).filter((s) => !s.isBooked);
+    const startIdx = sorted.findIndex((s) => {
+      const p = parseTimeParts(s.time);
+      return p && p.hour === startHour && p.minute === 0;
+    });
+    if (startIdx < 0) continue;
+
+    const picked: typeof sorted = [];
+    for (let i = 0; i < hourCount; i++) {
+      const slot = sorted[startIdx + i];
+      if (!slot || slot.isBooked) break;
+      if (i > 0) {
+        const prev = picked[picked.length - 1];
+        const a = slotMinutesFromMidnight(prev.time);
+        const b = slotMinutesFromMidnight(slot.time);
+        if (a == null || b == null || b - a !== 60) break;
+      }
+      picked.push(slot);
+    }
+    if (picked.length === hourCount) {
+      for (const s of picked) {
+        out.add(`${court.name}|${s.time}`);
+      }
+      return out;
+    }
+  }
+  return out;
+}
+
+function pickSingleHourSlotAtHour(venue: VenueResult, startHour: number): Set<string> {
+  for (const court of venue.courts) {
+    const sorted = sortSlotsByTime(court.slots).filter((s) => !s.isBooked);
+    const s = sorted.find((sl) => {
+      const p = parseTimeParts(sl.time);
+      return p && p.hour === startHour && p.minute === 0;
+    });
+    if (s) return new Set([`${court.name}|${s.time}`]);
+  }
+  return new Set();
+}
+
+function tryPickConsecutiveFromAnchor(
+  venue: VenueResult,
+  startHour: number,
+  startMinute: 0 | 30,
+  halfHourCount: number,
+): Set<string> {
+  const out = new Set<string>();
+  if (halfHourCount < 1) return out;
+
+  for (const court of venue.courts) {
+    const sorted = sortSlotsByTime(court.slots).filter((s) => !s.isBooked);
+    const startIdx = sorted.findIndex((s) => {
+      const p = parseTimeParts(s.time);
+      return p && p.hour === startHour && p.minute === startMinute;
+    });
+    if (startIdx < 0) continue;
+
+    const picked: typeof sorted = [];
+    for (let i = 0; i < halfHourCount; i++) {
+      const slot = sorted[startIdx + i];
+      if (!slot || slot.isBooked) break;
+      if (i > 0) {
+        const prev = picked[picked.length - 1];
+        const a = slotMinutesFromMidnight(prev.time);
+        const b = slotMinutesFromMidnight(slot.time);
+        if (a == null || b == null || b - a !== 30) break;
+      }
+      picked.push(slot);
+    }
+    if (picked.length === halfHourCount) {
+      for (const s of picked) {
+        out.add(`${court.name}|${s.time}`);
+      }
+      return out;
+    }
+  }
+  return out;
+}
+
+function pickSingleSlotAtHour(venue: VenueResult, startHour: number): Set<string> {
+  for (const court of venue.courts) {
+    const sorted = sortSlotsByTime(court.slots).filter((s) => !s.isBooked);
+    for (const minute of [0, 30] as const) {
+      const s = sorted.find((sl) => {
+        const p = parseTimeParts(sl.time);
+        return p && p.hour === startHour && p.minute === minute;
+      });
+      if (s) return new Set([`${court.name}|${s.time}`]);
+    }
+  }
+  return new Set();
+}
+
+/**
+ * Slots to preselect from search start hour + duration: prefers a full run of
+ * consecutive 30m slots on one court; otherwise the first free slot at that hour (:00 then :30).
+ * When `venue.use30MinSlots` is false, uses consecutive **hour** slots instead.
+ */
+export function pickSlotsForSearch(
+  venue: VenueResult,
+  startHour: number,
+  halfHourCount: number,
+): Set<string> {
+  const use30 = venue.use30MinSlots !== false;
+  if (!use30) {
+    const hourCount = Math.max(1, Math.round(halfHourCount / 2));
+    const run = tryPickConsecutiveHourSlots(venue, startHour, hourCount);
+    if (run.size === hourCount) return run;
+    return pickSingleHourSlotAtHour(venue, startHour);
+  }
+
+  const fromZero = tryPickConsecutiveFromAnchor(venue, startHour, 0, halfHourCount);
+  if (fromZero.size === halfHourCount) return fromZero;
+
+  if (halfHourCount > 1) {
+    const fromThirty = tryPickConsecutiveFromAnchor(venue, startHour, 30, halfHourCount);
+    if (fromThirty.size === halfHourCount) return fromThirty;
+  }
+
+  return pickSingleSlotAtHour(venue, startHour);
 }
 
 export const PERIOD_RANGES: Record<string, [number, number]> = {

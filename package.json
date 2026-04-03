@@ -7,6 +7,7 @@
     "start": "next start",
     "lint": "next lint",
     "db:seed": "npx tsx prisma/seed.ts",
+    "db:sync-pricing": "npx tsx prisma/sync-pricing-from-json.ts",
     "db:migrate": "npx prisma migrate dev",
     "db:generate": "npx prisma generate"
   },
@@ -14,6 +15,7 @@
     "seed": "npx tsx prisma/seed.ts"
   },
   "dependencies": {
+    "bcryptjs": "^3.0.2",
     "@prisma/client": "^6.19.2",
     "dotenv": "^17.3.1",
     "leaflet": "^1.9.4",
@@ -23,6 +25,7 @@
     "react-dom": "^19.0.0"
   },
   "devDependencies": {
+    "@types/bcryptjs": "^2.4.6",
     "@types/leaflet": "^1.9.15",
     "@types/node": "^22.10.0",
     "@types/react": "^19.0.0",

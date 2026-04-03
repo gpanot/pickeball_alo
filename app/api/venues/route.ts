@@ -1,6 +1,9 @@
 import { NextRequest, NextResponse } from 'next/server';
 import { prisma } from '@/lib/prisma';
+import { venueSearchTokensWhere } from '@/lib/venue-search';
 import { sortSlotsByTime } from '@/lib/formatters';
+import { parsePricingRows } from '@/lib/pricing';
+import { computeCourtSlots, loadSlotBookStateForCourts } from '@/lib/venue-slots';
 
 /** Default “you are here” for radius search (HCMC core) when the client does not send GPS. */
 const DEFAULT_REF_LAT = 10.79;
@@ -30,28 +33,24 @@ export async function GET(req: NextRequest) {
   const radius = sp.get('radius') ? parseFloat(sp.get('radius')!) : 10;
 
   const venues = await prisma.venue.findMany({
-    where: q
-      ? {
-          OR: [
-            { name: { contains: q, mode: 'insensitive' } },
-            { address: { contains: q, mode: 'insensitive' } },
-          ],
-        }
-      : undefined,
+    where: venueSearchTokensWhere(q),
     include: {
-      courts: {
-        include: {
-          slots: {
-            where: { date },
-            orderBy: { time: 'asc' },
-          },
-        },
-      },
+      courts: true,
+      pricingTables: { orderBy: { sortOrder: 'asc' } },
+      dateOverrides: true,
     },
   });
 
+  const courtIds = venues.flatMap((v) => v.courts.map((c) => c.id));
+  const bookState = await loadSlotBookStateForCourts(courtIds, date);
+
   let results = venues.map((v) => {
     const distance = haversineKm(refLat, refLng, v.lat, v.lng);
+    const pricingLite = v.pricingTables.map((t) => ({
+      dayTypes: t.dayTypes,
+      sortOrder: t.sortOrder,
+      rows: t.rows,
+    }));
     return {
       id: v.id,
       name: v.name,
@@ -71,6 +70,15 @@ export async function GET(req: NextRequest) {
       instagramUrl: v.instagramUrl,
       tiktokUrl: v.tiktokUrl,
       googleUrl: v.googleUrl,
+      hasMemberPricing: v.hasMemberPricing,
+      use30MinSlots: v.use30MinSlots,
+      pricingTables: v.pricingTables.map((t) => ({
+        id: t.id,
+        name: t.name,
+        dayTypes: t.dayTypes,
+        sortOrder: t.sortOrder,
+        rows: parsePricingRows(t.rows),
+      })),
       distance: Math.round(distance * 10) / 10,
       courts: v.courts.map((c) => ({
         id: c.id,
@@ -78,12 +86,9 @@ export async function GET(req: NextRequest) {
         note: c.note,
         isAvailable: c.isAvailable,
         slots: sortSlotsByTime(
-          c.slots.map((s) => ({
-            id: s.id,
-            time: s.time,
-            price: s.price,
-            isBooked: s.isBooked,
-          })),
+          computeCourtSlots(c, date, pricingLite, v.dateOverrides, bookState, {
+            use30MinSlots: v.use30MinSlots,
+          }),
         ),
       })),
     };

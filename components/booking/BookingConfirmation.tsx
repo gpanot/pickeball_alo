@@ -4,6 +4,7 @@ import React from 'react';
 import { CheckIcon } from '@/components/ui/Icons';
 import type { ThemeTokens } from '@/lib/theme';
 import type { BookingResult } from '@/lib/types';
+import { formatBookingOrderRef } from '@/lib/formatters';
 
 interface BookingConfirmationProps {
   booking: BookingResult;
@@ -27,7 +28,7 @@ export default function BookingConfirmation({ booking, onViewBookings, onDone, t
         The venue will confirm your booking shortly
       </p>
       <p style={{ fontSize: 13, color: t.textMuted, margin: '0 0 32px' }}>
-        Order #{booking.orderId.slice(0, 8)}
+        Order {formatBookingOrderRef(booking.orderId)}
       </p>
 
       <button

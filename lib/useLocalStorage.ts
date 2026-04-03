@@ -1,17 +1,43 @@
 'use client';
 
-import { useState, useEffect, useCallback } from 'react';
+import { useState, useEffect, useCallback, useRef } from 'react';
+
+function readStored<T>(key: string, fallback: T): T {
+  if (typeof window === 'undefined') return fallback;
+  try {
+    const raw = window.localStorage.getItem(key);
+    if (raw == null || raw === '') return fallback;
+    return JSON.parse(raw) as T;
+  } catch {
+    return fallback;
+  }
+}
 
 export function useLocalStorage<T>(key: string, initialValue: T): [T, (val: T | ((prev: T) => T)) => void] {
-  const [storedValue, setStoredValue] = useState<T>(initialValue);
+  const initialRef = useRef(initialValue);
+  initialRef.current = initialValue;
+
+  const [storedValue, setStoredValue] = useState<T>(() => readStored(key, initialValue));
 
   useEffect(() => {
-    try {
-      const item = window.localStorage.getItem(key);
-      if (item) setStoredValue(JSON.parse(item));
-    } catch {
-      // ignore
-    }
+    setStoredValue(readStored(key, initialRef.current));
+  }, [key]);
+
+  useEffect(() => {
+    const onStorage = (e: StorageEvent) => {
+      if (e.key !== key || e.storageArea !== window.localStorage) return;
+      if (e.newValue === null) {
+        setStoredValue(initialRef.current);
+        return;
+      }
+      try {
+        setStoredValue(JSON.parse(e.newValue) as T);
+      } catch {
+        setStoredValue(initialRef.current);
+      }
+    };
+    window.addEventListener('storage', onStorage);
+    return () => window.removeEventListener('storage', onStorage);
   }, [key]);
 
   const setValue = useCallback(
@@ -21,7 +47,7 @@ export function useLocalStorage<T>(key: string, initialValue: T): [T, (val: T | 
         try {
           window.localStorage.setItem(key, JSON.stringify(next));
         } catch {
-          // ignore
+          // quota / private mode
         }
         return next;
       });

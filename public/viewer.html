@@ -211,7 +211,7 @@
 
   /* DETAIL PANEL */
   .detail-panel {
-    height: 220px;
+    height: 320px;
     border-top: 1px solid var(--border);
     background: var(--panel);
     overflow-y: auto;
@@ -359,6 +359,7 @@
   <div style="font-size:10px; color:var(--muted)">Pickleball venues / Vietnam</div>
   <div class="header-stats">
     <div>VENUES <span class="stat-val" id="totalCount">0</span></div>
+    <div>COURTS <span class="stat-val" id="totalCourts">0</span></div>
     <div>SHOWN <span class="stat-val" id="shownCount">0</span></div>
   </div>
 </header>
@@ -371,6 +372,8 @@
         <option value="name">A-Z</option>
         <option value="price_asc">Price low</option>
         <option value="price_desc">Price high</option>
+        <option value="courts_desc">Most courts</option>
+        <option value="rating_desc">Top rated</option>
       </select>
     </div>
     <div class="venue-list" id="venueList">
@@ -476,11 +479,18 @@ function loadVenues(data) {
     ...v,
     id: i,
     minPrice: getMinPrice(v),
-    coords: guessCoords(v.address)
+    coords: (v.latitude && v.longitude) ? [v.latitude, v.longitude] : guessCoords(v.address)
   }));
   document.getElementById('uploadOverlay').style.display = 'none';
   document.getElementById('totalCount').textContent = allVenues.length;
+  document.getElementById('totalCourts').textContent = allVenues.reduce((s, v) => s + (v.courtCount || 0), 0);
   filterVenues();
+
+  const withCoords = allVenues.filter(v => v.coords);
+  if (withCoords.length) {
+    const bounds = L.latLngBounds(withCoords.map(v => v.coords));
+    map.fitBounds(bounds, { padding: [30, 30] });
+  }
 }
 
 function filterVenues() {
@@ -496,6 +506,8 @@ function filterVenues() {
     if (sort === 'name') return (a.name || '').localeCompare(b.name || '');
     if (sort === 'price_asc') return (a.minPrice || Infinity) - (b.minPrice || Infinity);
     if (sort === 'price_desc') return (b.minPrice || -Infinity) - (a.minPrice || -Infinity);
+    if (sort === 'courts_desc') return (b.courtCount || 0) - (a.courtCount || 0);
+    if (sort === 'rating_desc') return (b.rating || 0) - (a.rating || 0);
     return 0;
   });
 
@@ -517,6 +529,8 @@ function renderList() {
       <div class="venue-address">${v.address || 'Address unknown'}</div>
       <div class="price-badges">
         ${v.minPrice ? `<span class="badge badge-price">from ${formatPrice(v.minPrice)}</span>` : ''}
+        ${v.courtCount ? `<span class="badge" style="background:rgba(255,255,255,0.06);color:#aaa;border:1px solid #333">${v.courtCount} courts</span>` : ''}
+        ${v.rating ? `<span class="badge" style="background:rgba(255,255,255,0.06);color:#aaa;border:1px solid #333">⭐${v.rating}</span>` : ''}
         ${(v.promotions || []).length ? `<span class="badge badge-promo">PROMO</span>` : ''}
         ${!v.coords ? `<span class="badge" style="background:rgba(255,255,255,0.05);color:#555;border:1px solid #333">no GPS</span>` : ''}
       </div>
@@ -577,10 +591,29 @@ function showDetail(venue) {
   const panel = document.getElementById('detailPanel');
   panel.classList.add('open');
 
+  // Meta info (phone, hours, rating, courts)
+  let metaHtml = '<div style="display:flex;flex-wrap:wrap;gap:12px;margin-bottom:12px;font-size:10px;color:var(--muted)">';
+  if (venue.phone) metaHtml += `<span>📞 ${venue.phone}</span>`;
+  if (venue.hours) metaHtml += `<span>🕐 ${venue.hours}</span>`;
+  if (venue.rating) metaHtml += `<span>⭐ ${venue.rating} (${venue.ratingCount || 0})</span>`;
+  if (venue.courtCount) metaHtml += `<span>🏟 ${venue.courtCount} courts</span>`;
+  if (venue.hasVoucher) metaHtml += `<span style="color:var(--orange)">🎫 Voucher</span>`;
+  metaHtml += '</div>';
+
+  // Courts list
+  let courtsHtml = '';
+  if (venue.courts && venue.courts.length) {
+    const names = venue.courts.map(c => c.name).join(', ');
+    courtsHtml = `<div style="font-size:10px;color:var(--muted);margin-bottom:10px">Courts: ${names}</div>`;
+  }
+
+  // Pricing tables
   let tablesHtml = '';
   if (venue.pricing_tables && venue.pricing_tables.length) {
-    venue.pricing_tables.forEach(table => {
+    venue.pricing_tables.forEach((table, idx) => {
       if (!table.length) return;
+      const tableName = venue.pricing_table_names?.[idx];
+      if (tableName) tablesHtml += `<div style="font-size:11px;color:var(--acid);margin-bottom:4px;font-weight:700">${tableName}</div>`;
       const headers = table[0];
       const rows = table.slice(1);
       tablesHtml += `
@@ -599,8 +632,22 @@ function showDetail(venue) {
     `<div style="font-size:10px;color:var(--orange);margin-top:4px">🎁 ${p}</div>`
   ).join('');
 
+  // Payment info
+  let paymentHtml = '';
+  if (venue.payments && venue.payments.length) {
+    paymentHtml = '<div style="margin-top:10px;padding-top:8px;border-top:1px solid var(--border)">';
+    paymentHtml += '<div style="font-size:10px;color:var(--acid);font-weight:700;margin-bottom:6px">PAYMENT INFO</div>';
+    for (const p of venue.payments) {
+      paymentHtml += `<div style="font-size:10px;color:var(--muted);margin-bottom:4px">
+        🏦 ${p.bank} — ${p.accountName} — ${p.accountNumber}
+        ${p.qr ? `<a href="${p.qr}" target="_blank" style="color:var(--acid);margin-left:6px">QR</a>` : ''}
+      </div>`;
+    }
+    paymentHtml += '</div>';
+  }
+
   panel.innerHTML = `
-    <div style="display:flex;justify-content:space-between;align-items:start;margin-bottom:12px">
+    <div style="display:flex;justify-content:space-between;align-items:start;margin-bottom:8px">
       <div>
         <div class="detail-title">${venue.name || 'Venue'}</div>
         <div class="detail-addr">${venue.address || 'Address not found'}</div>
@@ -611,8 +658,11 @@ function showDetail(venue) {
         flex-shrink:0;margin-left:16px;
       ">BOOK NOW</a>
     </div>
+    ${metaHtml}
+    ${courtsHtml}
     ${tablesHtml}
     ${promos}
+    ${paymentHtml}
   `;
 }
 
@@ -631,6 +681,12 @@ document.getElementById('fileInput').addEventListener('change', e => {
   };
   reader.readAsText(file);
 });
+
+// Auto-load courts.json from same directory
+fetch('courts.json')
+  .then(r => { if (r.ok) return r.json(); throw new Error('not found'); })
+  .then(data => loadVenues(Array.isArray(data) ? data : [data]))
+  .catch(() => { /* no auto-load, user can use upload or demo */ });
 
 // Demo data
 function loadDemo() {

@@ -2,6 +2,13 @@ import type { VenueResult, BookingResult, UserProfileData, SearchParams, Booking
 
 const BASE = '';
 
+export async function getVenueCatalogCount(): Promise<number> {
+  const res = await fetch(`${BASE}/api/venues/count`, { cache: 'no-store' });
+  if (!res.ok) throw new Error('Failed to fetch venue count');
+  const data = (await res.json()) as { count?: number };
+  return typeof data.count === 'number' ? data.count : 0;
+}
+
 export async function searchVenues(params: SearchParams): Promise<VenueResult[]> {
   const qs = new URLSearchParams();
   if (params.query) qs.set('q', params.query);
@@ -42,6 +49,10 @@ export async function createBooking(data: {
     headers: { 'Content-Type': 'application/json' },
     body: JSON.stringify(data),
   });
+  if (res.status === 409) {
+    const err = await res.json().catch(() => ({}));
+    throw new Error(typeof err.error === 'string' ? err.error : 'Those slots are no longer available');
+  }
   if (!res.ok) throw new Error('Failed to create booking');
   return res.json();
 }

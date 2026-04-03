@@ -1,17 +1,25 @@
 /**
- * Imports venues from `public/courts.json` (alobo export, ~2k pickleball locations).
- *
- * - Default: loads **all** rows (full migration). Takes several minutes.
- * - Faster / HCMC-only: `SEED_RADIUS_KM=25 npx prisma db seed` (~400 venues near default map center).
+ * Imports venues from `public/courts.json`.
+ * Pricing: structured PricingTable rows (spec) + TimeSlots generated from them.
  */
 import 'dotenv/config';
 import * as fs from 'node:fs';
 import * as path from 'node:path';
+import bcrypt from 'bcryptjs';
+import {
+  type CourtJsonRow,
+  extractPriceRangeVnd,
+  legacyTablesToStructured,
+  parseLegacyTables,
+} from '../lib/json-venue-pricing';
+import { computeCourtSlots } from '../lib/venue-slots';
 import { PrismaClient } from '../lib/generated/prisma/client.js';
+
+const DEFAULT_ADMIN_PIN = '1234';
+const adminPinHash = bcrypt.hashSync(DEFAULT_ADMIN_PIN, 10);
 
 const prisma = new PrismaClient();
 
-/** HCMC reference (same as API default). Used only when SEED_RADIUS_KM is set. */
 const REF_LAT = 10.79;
 const REF_LNG = 106.71;
 
@@ -35,66 +43,20 @@ function futureDateStr(daysAhead: number): string {
   return d.toISOString().slice(0, 10);
 }
 
-/** Half-hour slots 05:00–23:30 plus 00:00 (midnight); prices in VND. */
-function buildStandardSlots(priceMidVnd: number): { time: string; price: number }[] {
-  const out: { time: string; price: number }[] = [];
-  for (let h = 5; h <= 23; h++) {
-    for (const m of [0, 30]) {
-      const time = `${String(h).padStart(2, '0')}:${String(m).padStart(2, '0')}`;
-      const peak = h >= 17 && h <= 20 ? 15_000 : h <= 8 ? -3_000 : 4_000;
-      const bump = ((h * 2 + (m === 30 ? 1 : 0)) % 5) * 2_000;
-      const price = Math.max(15_000, priceMidVnd + peak + bump);
-      out.push({ time, price });
-    }
-  }
-  out.push({ time: '00:00', price: Math.max(15_000, priceMidVnd + 8_000) });
-  return out;
-}
-
-const SLOTS_PER_COURT_PER_DAY = buildStandardSlots(80_000).length;
-
-interface CourtJsonRow {
-  name: string;
-  address: string;
-  latitude: number | string;
-  longitude: number | string;
-  phone?: string;
-  hours?: string;
-  rating: number | null;
-  ratingCount?: number;
-  sports?: string[];
-  pricing_tables?: unknown;
-  flat_prices?: unknown;
-}
-
-const DEFAULT_PRICE_MIN = 80_000;
-const DEFAULT_PRICE_MAX = 120_000;
-
-/** Pull VND amounts like 159.000 or 1.250.000 from pricing JSON strings. */
-function extractPriceRangeVnd(v: CourtJsonRow): [number, number] {
-  const blob = JSON.stringify([v.pricing_tables, v.flat_prices]);
-  const re = /\d{1,3}(?:\.\d{3})+/g;
-  const values: number[] = [];
-  let m: RegExpExecArray | null;
-  while ((m = re.exec(blob)) !== null) {
-    const n = parseInt(m[0].replace(/\./g, ''), 10);
-    if (n >= 15_000 && n <= 5_000_000) values.push(n);
-  }
-  if (values.length === 0) return [DEFAULT_PRICE_MIN, DEFAULT_PRICE_MAX];
-  return [Math.min(...values), Math.max(...values)];
-}
-
 async function main() {
   console.log('Clearing existing data...');
   await prisma.timeSlot.deleteMany();
-  await prisma.court.deleteMany();
   await prisma.booking.deleteMany();
+  await prisma.dateOverride.deleteMany();
+  await prisma.pricingTable.deleteMany();
+  await prisma.venuePayment.deleteMany();
+  await prisma.court.deleteMany();
   await prisma.venue.deleteMany();
   await prisma.userProfile.deleteMany();
 
   const jsonPath = path.join(process.cwd(), 'public', 'courts.json');
   if (!fs.existsSync(jsonPath)) {
-    console.error(`Missing ${jsonPath} — cannot seed from alobo export.`);
+    console.error(`Missing ${jsonPath}`);
     process.exit(1);
   }
 
@@ -122,15 +84,22 @@ async function main() {
   if (filterByRadius) {
     const before = list.length;
     list = list.filter((r) => haversineKm(REF_LAT, REF_LNG, r.latitude, r.longitude) <= radiusKm);
-    console.log(`SEED_RADIUS_KM=${radiusKm}: ${list.length} venues within radius (of ${before} pickleball rows).`);
+    console.log(`SEED_RADIUS_KM=${radiusKm}: ${list.length} venues (of ${before}).`);
   } else {
-    console.log(`Importing all ${list.length} venues from courts.json (set SEED_RADIUS_KM for a smaller, faster seed).`);
+    console.log(`Importing ${list.length} venues.`);
   }
 
   const dates: string[] = [todayStr()];
   for (let d = 1; d <= 7; d++) dates.push(futureDateStr(d));
 
-  type SlotRow = { courtId: string; date: string; time: string; price: number; isBooked: boolean };
+  type SlotRow = {
+    courtId: string;
+    date: string;
+    time: string;
+    price: number;
+    memberPrice: number | null;
+    isBooked: boolean;
+  };
   let slotBatch: SlotRow[] = [];
   const SLOT_CHUNK = 4_000;
 
@@ -144,6 +113,25 @@ async function main() {
   for (const v of list) {
     const [priceMin, priceMax] = extractPriceRangeVnd(v);
     const mid = Math.round((priceMin + priceMax) / 2);
+
+    const legacy = parseLegacyTables(v);
+    const { tables: structTables, hasMember } = legacyTablesToStructured(legacy, mid);
+
+    const courtNames =
+      Array.isArray(v.courts) && v.courts.length > 0
+        ? v.courts.map((c) => ({ name: String(c.name).slice(0, 120), note: null, isAvailable: true }))
+        : [{ name: 'Court 1', note: null, isAvailable: true }];
+
+    const paymentRecords =
+      Array.isArray(v.payments) && v.payments.length > 0
+        ? v.payments.map((p, pi) => ({
+            bank: String(p.bank || '').slice(0, 120),
+            accountName: String(p.accountName || '').slice(0, 200),
+            accountNumber: String(p.accountNumber || '').slice(0, 60),
+            qrImageUrl: p.qr ? String(p.qr).slice(0, 500) : null,
+            sortOrder: pi,
+          }))
+        : [];
 
     const created = await prisma.venue.create({
       data: {
@@ -160,26 +148,54 @@ async function main() {
         tags: ['Pickleball'],
         amenities: [],
         images: [],
-        courts: {
-          create: [{ name: 'Court 1', note: null, isAvailable: true }],
+        adminPin: adminPinHash,
+        hasMemberPricing: hasMember,
+        courts: { create: courtNames },
+        pricingTables: {
+          create: structTables.map((t, i) => ({
+            name: t.name,
+            dayTypes: t.dayTypes,
+            rows: t.rows,
+            sortOrder: i,
+          })),
         },
+        payments: paymentRecords.length > 0 ? { create: paymentRecords } : undefined,
       },
-      include: { courts: true },
+      include: { courts: true, pricingTables: { orderBy: { sortOrder: 'asc' } }, dateOverrides: true },
     });
 
-    const courtId = created.courts[0]!.id;
-    const tmpl = buildStandardSlots(mid);
+    const pricingLite = created.pricingTables.map((t) => ({
+      dayTypes: t.dayTypes,
+      sortOrder: t.sortOrder,
+      rows: t.rows,
+    }));
 
     for (const date of dates) {
-      for (const s of tmpl) {
-        slotBatch.push({
-          courtId,
+      for (const court of created.courts) {
+        const slots = computeCourtSlots(
+          {
+            id: court.id,
+            name: court.name,
+            note: court.note,
+            isAvailable: court.isAvailable,
+          },
           date,
-          time: s.time,
-          price: s.price,
-          isBooked: false,
-        });
-        if (slotBatch.length >= SLOT_CHUNK) await flushSlots();
+          pricingLite,
+          created.dateOverrides,
+          new Map(),
+          { forPersistence: true },
+        );
+        for (const s of slots) {
+          slotBatch.push({
+            courtId: court.id,
+            date,
+            time: s.time,
+            price: s.price,
+            memberPrice: hasMember ? (s.memberPrice ?? null) : null,
+            isBooked: false,
+          });
+          if (slotBatch.length >= SLOT_CHUNK) await flushSlots();
+        }
       }
     }
 
@@ -188,8 +204,7 @@ async function main() {
   }
 
   await flushSlots();
-  const approxSlots = list.length * dates.length * SLOTS_PER_COURT_PER_DAY;
-  console.log(`Seed complete: ${list.length} venues, ${list.length} courts, ~${approxSlots} time slots.`);
+  console.log(`Seed complete: ${list.length} venues, structured pricing, time slots from pricing rows.`);
 }
 
 main()

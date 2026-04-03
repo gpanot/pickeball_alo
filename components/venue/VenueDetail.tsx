@@ -1,21 +1,36 @@
 'use client';
 
-import React, { useState, useMemo } from 'react';
+import React, { useState, useMemo, useEffect, useRef } from 'react';
 import { HeartIcon, ShareIcon, StarIcon, CourtIcon, PinIcon, DirectionsIcon } from '@/components/ui/Icons';
 import AvailabilityTab from './AvailabilityTab';
+import PricingTab from './PricingTab';
 import InfoTab from './InfoTab';
 import BookingForm from '@/components/booking/BookingForm';
 import BookingConfirmation from '@/components/booking/BookingConfirmation';
-import { formatPrice } from '@/lib/formatters';
+import {
+  earliestSelectedSlotTime,
+  formatDateLabel,
+  formatPrice,
+  getNextDays,
+  START_HOUR_OPTIONS,
+} from '@/lib/formatters';
 import type { ThemeTokens } from '@/lib/theme';
 import type { VenueResult, BookingResult } from '@/lib/types';
 
 interface VenueDetailProps {
   venue: VenueResult;
   visible: boolean;
+  /** When true on open, go straight to Confirm Booking if there are selected slots. */
+  initialJumpToBooking?: boolean;
   selectedSlots: Set<string>;
   isSaved: boolean;
   searchDate: string;
+  /** Index into `getNextDays(7)`; changing day refetches slots for this venue. */
+  selectedDateIndex: number;
+  onAvailabilityDateChange: (dateIndex: number) => void;
+  detailDateLoading?: boolean;
+  /** Search time-of-day index; used to scroll availability when no slots are pre-selected. */
+  selectedTimeIndex: number;
   userId: string;
   userName: string;
   userPhone: string;
@@ -29,14 +44,127 @@ interface VenueDetailProps {
 
 type SheetStep = 'detail' | 'booking' | 'confirmation';
 
+function CompactAvailabilityDateStrip({
+  selectedDateIndex,
+  loading,
+  onSelect,
+  t,
+}: {
+  selectedDateIndex: number;
+  loading: boolean;
+  onSelect: (i: number) => void;
+  t: ThemeTokens;
+}) {
+  const dates = getNextDays(7);
+  return (
+    <div style={{ padding: '0 20px 12px' }}>
+      <div style={{ fontSize: 11, fontWeight: 700, letterSpacing: 1.2, textTransform: 'uppercase', color: t.textMuted, marginBottom: 8 }}>
+        Date
+      </div>
+      <div
+        style={{
+          display: 'flex',
+          gap: 6,
+          overflowX: 'auto',
+          paddingBottom: 2,
+          opacity: loading ? 0.55 : 1,
+          pointerEvents: loading ? 'none' : 'auto',
+        }}
+      >
+        {dates.map((d, i) => {
+          const { day, date } = formatDateLabel(d);
+          const active = i === selectedDateIndex;
+          return (
+            <button
+              key={i}
+              type="button"
+              onClick={() => onSelect(i)}
+              style={{
+                minWidth: 56,
+                padding: '6px 10px',
+                borderRadius: 10,
+                border: 'none',
+                cursor: 'pointer',
+                fontFamily: 'inherit',
+                flexShrink: 0,
+                display: 'flex',
+                flexDirection: 'column',
+                alignItems: 'center',
+                gap: 2,
+                background: active ? t.accent : t.bgCard,
+                color: active ? '#000' : t.text,
+                outline: active ? 'none' : `1px solid ${t.border}`,
+                transition: 'all 0.15s',
+              }}
+            >
+              <span style={{ fontSize: 9, fontWeight: 600, opacity: active ? 0.75 : 0.65 }}>{day}</span>
+              <span style={{ fontSize: 12, fontWeight: 800 }}>{date}</span>
+            </button>
+          );
+        })}
+      </div>
+    </div>
+  );
+}
+
 export default function VenueDetail({
-  venue, visible, selectedSlots, isSaved, searchDate,
-  userId, userName, userPhone,
-  onClose, onToggleSlot, onToggleSaved, onBookingComplete, onViewBookings, t,
+  venue,
+  visible,
+  initialJumpToBooking = false,
+  selectedSlots,
+  isSaved,
+  searchDate,
+  selectedDateIndex,
+  onAvailabilityDateChange,
+  detailDateLoading = false,
+  selectedTimeIndex,
+  userId,
+  userName,
+  userPhone,
+  onClose,
+  onToggleSlot,
+  onToggleSaved,
+  onBookingComplete,
+  onViewBookings,
+  t,
 }: VenueDetailProps) {
-  const [detailTab, setDetailTab] = useState<'avail' | 'info'>('avail');
+  const [detailTab, setDetailTab] = useState<'avail' | 'pricing' | 'info'>('avail');
+  const pricingTables = Array.isArray(venue.pricingTables) ? venue.pricingTables : [];
   const [step, setStep] = useState<SheetStep>('detail');
   const [completedBooking, setCompletedBooking] = useState<BookingResult | null>(null);
+  /** When sheet opens: earliest pre-selected time so Availability scrolls there first (not 5am). */
+  const [availabilityScrollAnchor, setAvailabilityScrollAnchor] = useState<string | null>(null);
+  const selectedSlotsRef = useRef(selectedSlots);
+  selectedSlotsRef.current = selectedSlots;
+  /** Only apply quick-book jump once per sheet open; slot changes must not re-trigger. */
+  const lastSheetOpenKeyRef = useRef<string | null>(null);
+
+  useEffect(() => {
+    if (!visible) {
+      lastSheetOpenKeyRef.current = null;
+      return;
+    }
+    const openKey = venue.id;
+    const isNewOpen = lastSheetOpenKeyRef.current !== openKey;
+    if (!isNewOpen) return;
+    lastSheetOpenKeyRef.current = openKey;
+    if (initialJumpToBooking && selectedSlots.size > 0) {
+      setStep('booking');
+    } else {
+      setStep('detail');
+    }
+  // eslint-disable-next-line react-hooks/exhaustive-deps -- selectedSlots only read at sheet open, not on toggle
+  }, [visible, venue.id, initialJumpToBooking]);
+
+  useEffect(() => {
+    if (!visible) {
+      setAvailabilityScrollAnchor(null);
+      return;
+    }
+    const names = venue.courts.map((c) => c.name);
+    setAvailabilityScrollAnchor(earliestSelectedSlotTime(selectedSlotsRef.current, names));
+    // eslint-disable-next-line react-hooks/exhaustive-deps -- anchor only when sheet opens; court list keyed by venue.id
+  }, [visible, venue.id]);
 
   const selArr = useMemo(() => {
     return [...selectedSlots].map((k) => {
@@ -48,6 +176,11 @@ export default function VenueDetail({
   }, [selectedSlots, venue.courts]);
 
   const totalPrice = selArr.reduce((s, x) => s + x.price, 0);
+
+  const searchHourScrollAnchor = useMemo(() => {
+    const h = START_HOUR_OPTIONS[selectedTimeIndex]?.hour ?? 9;
+    return `${String(h).padStart(2, '0')}:00`;
+  }, [selectedTimeIndex]);
 
   const handleBookingSuccess = (booking: BookingResult) => {
     setCompletedBooking(booking);
@@ -75,17 +208,29 @@ export default function VenueDetail({
       <div style={{
         position: 'fixed', bottom: 0, left: 0, right: 0,
         maxWidth: 430, margin: '0 auto', background: t.sheetBg,
-        borderRadius: '24px 24px 0 0', zIndex: 6001, maxHeight: '92vh',
+        borderRadius: '24px 24px 0 0', zIndex: 6001,
+        maxHeight: '92vh',
         display: 'flex', flexDirection: 'column',
+        overflow: 'hidden',
         transform: visible ? 'translateY(0)' : 'translateY(100%)',
         transition: 'transform 0.35s cubic-bezier(0.32,0.72,0,1)',
         boxShadow: '0 -8px 40px rgba(0,0,0,0.3)',
       }}>
-        <div style={{ display: 'flex', justifyContent: 'center', padding: '12px 0 6px' }}>
+        <div style={{ flexShrink: 0, display: 'flex', justifyContent: 'center', padding: '12px 0 6px' }}>
           <div style={{ width: 40, height: 4, borderRadius: 2, background: t.textMuted, opacity: 0.4 }} />
         </div>
 
-        <div style={{ flex: 1, overflowY: 'auto', overflowX: 'hidden' }}>
+        <div
+          style={{
+            flex: 1,
+            minHeight: 0,
+            overflowY: 'auto',
+            overflowX: 'hidden',
+            WebkitOverflowScrolling: 'touch',
+            overscrollBehavior: 'contain',
+            touchAction: 'pan-y',
+          }}
+        >
           {step === 'detail' && (
             <>
               {/* Photos */}
@@ -156,9 +301,23 @@ export default function VenueDetail({
                 </div>
               </div>
 
-              {/* Tabs */}
-              <div style={{ display: 'flex', borderBottom: `1px solid ${t.border}`, padding: '0 20px' }}>
-                {([{ key: 'avail', label: 'Availability' }, { key: 'info', label: 'Info' }] as const).map((tab) => (
+              {/* Tabs — sticky so long Availability / Pricing / Info stays scrollable under labels */}
+              <div
+                style={{
+                  display: 'flex',
+                  borderBottom: `1px solid ${t.border}`,
+                  padding: '0 20px',
+                  position: 'sticky',
+                  top: 0,
+                  zIndex: 4,
+                  background: t.sheetBg,
+                }}
+              >
+                {([
+                  { key: 'avail' as const, label: 'Availability' },
+                  { key: 'pricing' as const, label: 'Pricing' },
+                  { key: 'info' as const, label: 'Info' },
+                ]).map((tab) => (
                   <button
                     key={tab.key}
                     onClick={() => setDetailTab(tab.key)}
@@ -175,9 +334,31 @@ export default function VenueDetail({
                 ))}
               </div>
 
-              <div style={{ padding: '16px 0 140px' }}>
+              <div style={{ padding: '16px 0 32px' }}>
                 {detailTab === 'avail' && (
-                  <AvailabilityTab courts={venue.courts} selectedSlots={selectedSlots} onToggleSlot={onToggleSlot} t={t} />
+                  <>
+                    <CompactAvailabilityDateStrip
+                      selectedDateIndex={selectedDateIndex}
+                      loading={detailDateLoading}
+                      onSelect={onAvailabilityDateChange}
+                      t={t}
+                    />
+                    <AvailabilityTab
+                      courts={venue.courts}
+                      selectedSlots={selectedSlots}
+                      scrollAnchorTime={availabilityScrollAnchor ?? searchHourScrollAnchor}
+                      onToggleSlot={onToggleSlot}
+                      t={t}
+                    />
+                  </>
+                )}
+                {detailTab === 'pricing' && (
+                  <PricingTab
+                    pricingTables={pricingTables}
+                    hasMemberPricing={venue.hasMemberPricing}
+                    venuePhone={venue.phone}
+                    t={t}
+                  />
                 )}
                 {detailTab === 'info' && <InfoTab venue={venue} t={t} />}
               </div>
@@ -209,14 +390,20 @@ export default function VenueDetail({
           )}
         </div>
 
-        {/* CTA - only show on detail step */}
+        {/* CTA — flex footer so the area above scrolls (no absolute overlay blocking scroll) */}
         {step === 'detail' && (
-          <div style={{
-            position: 'absolute', bottom: 0, left: 0, right: 0,
-            padding: '12px 20px 28px',
-            background: `linear-gradient(transparent,${t.sheetBg} 25%)`,
-            display: 'flex', gap: 10, alignItems: 'center',
-          }}>
+          <div
+            style={{
+              flexShrink: 0,
+              padding: '12px 20px max(28px, env(safe-area-inset-bottom, 0px))',
+              paddingTop: 14,
+              borderTop: `1px solid ${t.border}`,
+              background: t.sheetBg,
+              display: 'flex',
+              gap: 10,
+              alignItems: 'center',
+            }}
+          >
             <a
               href={`https://www.google.com/maps/dir/?api=1&destination=${venue.lat},${venue.lng}`}
               target="_blank"

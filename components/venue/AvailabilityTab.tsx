@@ -1,34 +1,48 @@
 'use client';
 
-import React, { useMemo } from 'react';
-import { sortSlotsByTime } from '@/lib/formatters';
+import React, { useLayoutEffect, useMemo, useRef } from 'react';
+import { firstSlotIndexAtOrAfter, sortSlotsByTime } from '@/lib/formatters';
 import type { ThemeTokens } from '@/lib/theme';
 import type { CourtResult } from '@/lib/types';
 
 interface AvailabilityTabProps {
   courts: CourtResult[];
   selectedSlots: Set<string>;
+  /** First slot at or after this time is scrolled to the left of each court strip (search / pre-pick). */
+  scrollAnchorTime?: string | null;
   onToggleSlot: (courtName: string, time: string) => void;
   t: ThemeTokens;
 }
 
-export default function AvailabilityTab({ courts, selectedSlots, onToggleSlot, t }: AvailabilityTabProps) {
+export default function AvailabilityTab({
+  courts,
+  selectedSlots,
+  scrollAnchorTime = null,
+  onToggleSlot,
+  t,
+}: AvailabilityTabProps) {
   const courtsSorted = useMemo(
     () => courts.map((c) => ({ ...c, slots: sortSlotsByTime(c.slots) })),
     [courts],
   );
 
+  const stripRefs = useRef<Map<string, HTMLDivElement | null>>(new Map());
+
+  useLayoutEffect(() => {
+    if (!scrollAnchorTime) return;
+    for (const crt of courtsSorted) {
+      const strip = stripRefs.current.get(crt.name);
+      if (!strip || crt.slots.length === 0) continue;
+      const idx = firstSlotIndexAtOrAfter(crt.slots, scrollAnchorTime);
+      const btn = strip.children[idx] as HTMLElement | undefined;
+      if (btn && typeof btn.offsetLeft === 'number') {
+        strip.scrollLeft = Math.max(0, btn.offsetLeft - 6);
+      }
+    }
+  }, [scrollAnchorTime, courtsSorted]);
+
   return (
     <div>
-      <div style={{ fontSize: 11, color: t.textSec, padding: '0 20px 14px', display: 'flex', gap: 14, flexWrap: 'wrap' }}>
-        <span style={{ display: 'flex', alignItems: 'center', gap: 4 }}>
-          <span style={{ width: 8, height: 8, borderRadius: 4, background: t.green, display: 'inline-block' }} /> Available
-        </span>
-        <span style={{ display: 'flex', alignItems: 'center', gap: 4 }}>
-          <span style={{ width: 8, height: 8, borderRadius: 4, background: t.textMuted, display: 'inline-block' }} /> Booked
-        </span>
-      </div>
-
       {courtsSorted.map((crt, ci) => {
         const hasSlots = crt.slots.length > 0;
         const openCount = crt.slots.filter((s) => !s.isBooked).length;
@@ -51,7 +65,20 @@ export default function AvailabilityTab({ courts, selectedSlots, onToggleSlot, t
               {!hasSlots && <span style={{ fontSize: 11, color: t.orange, fontWeight: 600 }}>Unavailable</span>}
             </div>
             {hasSlots && (
-              <div style={{ display: 'flex', gap: 6, overflowX: 'auto', paddingLeft: 20, paddingRight: 20, paddingBottom: 4 }}>
+              <div
+                ref={(el) => {
+                  if (el) stripRefs.current.set(crt.name, el);
+                  else stripRefs.current.delete(crt.name);
+                }}
+                style={{
+                  display: 'flex',
+                  gap: 6,
+                  overflowX: 'auto',
+                  paddingLeft: 20,
+                  paddingRight: 20,
+                  paddingBottom: 4,
+                }}
+              >
                 {crt.slots.map((slot, si) => {
                   const key = `${crt.name}|${slot.time}`;
                   const isSel = selectedSlots.has(key);
@@ -60,14 +87,21 @@ export default function AvailabilityTab({ courts, selectedSlots, onToggleSlot, t
                   return (
                     <button
                       key={si}
+                      type="button"
                       onClick={() => !isBooked && onToggleSlot(crt.name, slot.time)}
                       disabled={isBooked}
                       style={{
-                        minWidth: 68, padding: '8px 10px', borderRadius: 10, border: 'none',
+                        minWidth: 68,
+                        padding: '8px 10px',
+                        borderRadius: 10,
+                        border: 'none',
                         cursor: isBooked ? 'default' : 'pointer',
                         background: isSel ? t.accent : isBooked ? t.bgInput : t.bgCard,
-                        opacity: isBooked ? 0.35 : 1, fontFamily: 'inherit',
-                        transition: 'all 0.15s', textAlign: 'center', flexShrink: 0,
+                        opacity: isBooked ? 0.35 : 1,
+                        fontFamily: 'inherit',
+                        transition: 'all 0.15s',
+                        textAlign: 'center',
+                        flexShrink: 0,
                         outline: isSel ? 'none' : `1px solid ${t.border}`,
                         boxShadow: isSel ? `0 2px 8px ${t.accent}44` : 'none',
                       }}

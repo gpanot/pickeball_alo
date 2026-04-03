@@ -87,6 +87,39 @@ export default function InfoTab({ venue, t }: InfoTabProps) {
           </span>
         ))}
       </div>
+
+      {venue.payments && venue.payments.length > 0 && (
+        <>
+          <div style={{ fontSize: 12, fontWeight: 700, letterSpacing: 1.5, textTransform: 'uppercase', color: t.textMuted, marginBottom: 12 }}>
+            Payment
+          </div>
+          <div style={{ display: 'flex', flexDirection: 'column', gap: 10, paddingBottom: 20 }}>
+            {venue.payments.map((p) => (
+              <div key={p.id} style={{
+                padding: 14, borderRadius: 12, background: t.bgCard,
+                border: `1px solid ${t.border}`,
+                display: 'flex', gap: 14, alignItems: 'flex-start',
+              }}>
+                <div style={{ flex: 1, minWidth: 0 }}>
+                  <div style={{ fontSize: 13, fontWeight: 700, color: t.text }}>{p.bank}</div>
+                  <div style={{ fontSize: 13, color: t.textSec, marginTop: 2 }}>{p.accountName}</div>
+                  <div style={{ fontSize: 14, fontWeight: 600, color: t.text, marginTop: 4, fontFamily: 'monospace', letterSpacing: 1 }}>{p.accountNumber}</div>
+                </div>
+                {p.qrImageUrl && (
+                  <img
+                    src={p.qrImageUrl}
+                    alt="QR"
+                    style={{
+                      width: 72, height: 72, objectFit: 'contain', borderRadius: 8,
+                      border: `1px solid ${t.border}`, flexShrink: 0, background: '#fff',
+                    }}
+                  />
+                )}
+              </div>
+            ))}
+          </div>
+        </>
+      )}
     </div>
   );
 }
