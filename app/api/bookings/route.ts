@@ -2,6 +2,7 @@ import { NextRequest, NextResponse } from 'next/server';
 import { Prisma } from '@/lib/generated/prisma/client';
 import { prisma } from '@/lib/prisma';
 import { HttpError } from '@/lib/http-error';
+import { upsertPlayerProfileFromBooking } from '@/lib/player-profile-sync';
 import { markSlotsBooked, resolveSlotIdsForReserve } from '@/lib/slot-sync';
 
 export async function GET(req: NextRequest) {
@@ -57,6 +58,8 @@ export async function POST(req: NextRequest) {
       },
       { isolationLevel: Prisma.TransactionIsolationLevel.Serializable },
     );
+
+    await upsertPlayerProfileFromBooking(booking.userName, booking.userPhone);
 
     return NextResponse.json(booking, { status: 201 });
   } catch (e: unknown) {

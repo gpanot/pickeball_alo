@@ -2,12 +2,13 @@
   "name": "pickeball_alo",
   "private": true,
   "scripts": {
-    "dev": "next dev",
+    "dev": "next dev -H 0.0.0.0",
     "postinstall": "prisma generate",
     "build": "prisma generate && next build",
     "start": "next start",
     "lint": "next lint",
     "db:seed": "npx tsx prisma/seed.ts",
+    "db:deploy": "prisma migrate deploy",
     "db:sync-pricing": "npx tsx prisma/sync-pricing-from-json.ts",
     "db:migrate": "npx prisma migrate dev",
     "db:generate": "npx prisma generate"

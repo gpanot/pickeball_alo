@@ -1,4 +1,5 @@
 import { NextRequest, NextResponse } from 'next/server';
+import type { Prisma } from '@/lib/generated/prisma/client';
 import { prisma } from '@/lib/prisma';
 import { venueSearchTokensWhere } from '@/lib/venue-search';
 import { sortSlotsByTime } from '@/lib/formatters';
@@ -19,6 +20,19 @@ function haversineKm(lat1: number, lng1: number, lat2: number, lng2: number): nu
   return R * 2 * Math.atan2(Math.sqrt(a), Math.sqrt(1 - a));
 }
 
+/** Narrow Prisma scan before haversine filter when radius is local (explore / nearby). */
+function geoBoundingWhere(refLat: number, refLng: number, radiusKm: number): Prisma.VenueWhereInput {
+  const pad = 1.1;
+  const r = radiusKm * pad;
+  const dLat = r / 111.32;
+  const cosLat = Math.cos((refLat * Math.PI) / 180);
+  const dLng = r / (111.32 * Math.max(cosLat, 0.12));
+  return {
+    lat: { gte: refLat - dLat, lte: refLat + dLat },
+    lng: { gte: refLng - dLng, lte: refLng + dLng },
+  };
+}
+
 export async function GET(req: NextRequest) {
   const sp = req.nextUrl.searchParams;
   const q = (sp.get('q') || '').trim();
@@ -31,9 +45,16 @@ export async function GET(req: NextRequest) {
   const refLat = lat != null && !Number.isNaN(lat) ? lat : DEFAULT_REF_LAT;
   const refLng = lng != null && !Number.isNaN(lng) ? lng : DEFAULT_REF_LNG;
   const radius = sp.get('radius') ? parseFloat(sp.get('radius')!) : 10;
+  const limitParam = sp.get('limit');
+  const limit = limitParam ? Math.max(1, parseInt(limitParam, 10)) : null;
+
+  const tokenWhere = venueSearchTokensWhere(q);
+  const bboxWhere = geoBoundingWhere(refLat, refLng, radius);
+  const venueWhere: Prisma.VenueWhereInput =
+    tokenWhere != null ? { AND: [tokenWhere, bboxWhere] } : bboxWhere;
 
   const venues = await prisma.venue.findMany({
-    where: venueSearchTokensWhere(q),
+    where: venueWhere,
     include: {
       courts: true,
       pricingTables: { orderBy: { sortOrder: 'asc' } },
@@ -102,6 +123,10 @@ export async function GET(req: NextRequest) {
     results.sort((a, b) => (b.rating ?? 0) - (a.rating ?? 0));
   } else {
     results.sort((a, b) => a.distance - b.distance);
+  }
+
+  if (limit != null && !Number.isNaN(limit)) {
+    results = results.slice(0, limit);
   }
 
   return NextResponse.json(results);
