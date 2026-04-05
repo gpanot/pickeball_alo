@@ -1,8 +1,11 @@
 import { NextRequest, NextResponse } from 'next/server';
 import { Prisma } from '@/lib/generated/prisma/client';
+import { parseBearerToken } from '@/lib/admin-auth';
+import { validateAdminToken } from '@/lib/admin-session';
 import { prisma } from '@/lib/prisma';
 import { upsertPlayerProfileFromBooking } from '@/lib/player-profile-sync';
 import { freeSlotsForBooking, markSlotsBooked, resolveSlotIdsForReserve } from '@/lib/slot-sync';
+import { autoCancelExpiredBookings } from '@/lib/booking-deadline';
 
 function resolveReviewedBy(body: { reviewedBy?: unknown }, nextStatus: string): string {
   if (typeof body.reviewedBy === 'string' && body.reviewedBy.trim()) {
@@ -17,6 +20,8 @@ export async function GET(
   { params }: { params: Promise<{ id: string }> },
 ) {
   const { id } = await params;
+
+  await autoCancelExpiredBookings(prisma, { bookingId: id });
 
   const booking = await prisma.booking.findUnique({ where: { id } });
   if (!booking) {
@@ -51,11 +56,11 @@ async function playerUpdateBookingSlots(
       if (existing.userId !== body.userId) {
         return { kind: 'err' as const, httpStatus: 403, message: 'Forbidden' };
       }
-      if (existing.status !== 'pending' && existing.status !== 'booked') {
+      if (existing.status !== 'pending') {
         return {
           kind: 'err' as const,
           httpStatus: 400,
-          message: 'Paid or canceled bookings cannot be edited',
+          message: 'Only pending bookings can be edited',
         };
       }
 
@@ -142,24 +147,26 @@ export async function PATCH(
     }
   }
 
-  const { status } = body as {
+  const bodyStatus = body as {
     status?: string;
+    userId?: string;
     adminNote?: string;
+    paymentNote?: string;
+    paymentProofUrl?: string;
     reviewedBy?: string;
   };
+
+  const { status } = bodyStatus;
 
   if (!status || typeof status !== 'string') {
     return NextResponse.json({ error: 'status required' }, { status: 400 });
   }
 
-  const allowed: Record<string, string[]> = {
-    pending: ['canceled', 'booked'],
-    booked: ['canceled', 'paid'],
-  };
-
   type TxResult =
     | { kind: 'ok'; booking: Awaited<ReturnType<typeof prisma.booking.update>> }
     | { kind: 'err'; message: string; httpStatus: number };
+
+  const token = parseBearerToken(req);
 
   const updated: TxResult = await prisma.$transaction(async (tx) => {
     const existing = await tx.booking.findUnique({ where: { id } });
@@ -167,44 +174,78 @@ export async function PATCH(
       return { kind: 'err', message: 'Not found', httpStatus: 404 };
     }
 
-    if (!allowed[existing.status]?.includes(status)) {
+    const isAdmin = validateAdminToken(token, existing.venueId);
+    const playerUserId =
+      typeof bodyStatus.userId === 'string' && bodyStatus.userId.trim()
+        ? bodyStatus.userId.trim()
+        : null;
+    const isOwner = playerUserId != null && playerUserId === existing.userId;
+
+    const now = new Date();
+    const reviewedBy = resolveReviewedBy(bodyStatus, status);
+
+    const data: Prisma.BookingUpdateInput = { status };
+
+    if (existing.status === 'pending' && status === 'payment_submitted') {
+      if (isAdmin) {
+        return { kind: 'err', message: 'Forbidden', httpStatus: 403 };
+      }
+      if (!isOwner) {
+        return { kind: 'err', message: 'Forbidden', httpStatus: 403 };
+      }
+      if (
+        typeof bodyStatus.paymentProofUrl !== 'string' ||
+        !bodyStatus.paymentProofUrl.trim()
+      ) {
+        return {
+          kind: 'err',
+          message: 'Payment proof screenshot is required',
+          httpStatus: 400,
+        };
+      }
+      data.paymentSubmittedAt = now;
+      data.paymentProofUrl = bodyStatus.paymentProofUrl;
+    } else if (existing.status === 'pending' && status === 'canceled') {
+      if (!isAdmin && !isOwner) {
+        return { kind: 'err', message: 'Forbidden', httpStatus: 403 };
+      }
+      data.reviewedAt = now;
+      data.reviewedBy = reviewedBy;
+      if (typeof bodyStatus.adminNote === 'string') {
+        data.adminNote = bodyStatus.adminNote.trim() || null;
+      }
+      await freeSlotsForBooking(tx, existing.venueId, existing.date, existing.slots);
+    } else if (existing.status === 'payment_submitted' && status === 'paid') {
+      if (!isAdmin) {
+        return { kind: 'err', message: 'Unauthorized', httpStatus: 401 };
+      }
+      data.reviewedAt = now;
+      data.reviewedBy = reviewedBy;
+      data.paymentConfirmedAt = now;
+    } else if (existing.status === 'payment_submitted' && status === 'pending') {
+      if (!isAdmin) {
+        return { kind: 'err', message: 'Unauthorized', httpStatus: 401 };
+      }
+      data.paymentSubmittedAt = null;
+      if (typeof bodyStatus.paymentNote === 'string' && bodyStatus.paymentNote.trim()) {
+        data.paymentNote = bodyStatus.paymentNote.trim();
+      }
+    } else if (existing.status === 'payment_submitted' && status === 'canceled') {
+      if (!isOwner && !isAdmin) {
+        return { kind: 'err', message: 'Forbidden', httpStatus: 403 };
+      }
+      data.reviewedAt = now;
+      data.reviewedBy = reviewedBy;
+      if (typeof bodyStatus.adminNote === 'string') {
+        data.adminNote = bodyStatus.adminNote.trim() || null;
+      }
+      await freeSlotsForBooking(tx, existing.venueId, existing.date, existing.slots);
+    } else {
       return {
         kind: 'err',
         message: `Cannot transition from ${existing.status} to ${status}`,
         httpStatus: 400,
       };
-    }
-
-    const now = new Date();
-    const reviewedBy = resolveReviewedBy(body, status);
-
-    const data: {
-      status: string;
-      reviewedAt?: Date;
-      reviewedBy?: string | null;
-      adminNote?: string | null;
-    } = { status };
-
-    if (existing.status === 'pending' && status === 'booked') {
-      data.reviewedAt = now;
-      data.reviewedBy = reviewedBy;
-    } else if (existing.status === 'pending' && status === 'canceled') {
-      data.reviewedAt = now;
-      data.reviewedBy = reviewedBy;
-      if (typeof body.adminNote === 'string') {
-        data.adminNote = body.adminNote.trim() || null;
-      }
-      await freeSlotsForBooking(tx, existing.venueId, existing.date, existing.slots);
-    } else if (existing.status === 'booked' && status === 'paid') {
-      data.reviewedAt = now;
-      data.reviewedBy = reviewedBy;
-    } else if (existing.status === 'booked' && status === 'canceled') {
-      data.reviewedAt = now;
-      data.reviewedBy = reviewedBy;
-      if (typeof body.adminNote === 'string') {
-        data.adminNote = body.adminNote.trim() || null;
-      }
-      await freeSlotsForBooking(tx, existing.venueId, existing.date, existing.slots);
     }
 
     const row = await tx.booking.update({

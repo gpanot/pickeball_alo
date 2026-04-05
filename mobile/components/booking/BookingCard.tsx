@@ -1,7 +1,8 @@
 import React, { memo } from 'react';
-import { View, Text, Pressable, StyleSheet } from 'react-native';
+import { View, Text, Pressable, StyleSheet, Alert } from 'react-native';
 import type { ThemeTokens } from '@/lib/theme';
 import type { BookingResult, BookingSlot } from '@/lib/types';
+import { formatVndFull } from '@/lib/formatters';
 
 interface BookingCardProps {
   booking: BookingResult;
@@ -12,9 +13,9 @@ interface BookingCardProps {
 }
 
 const STATUS_CONFIG: Record<string, { label: string; colorKey: 'orange' | 'green' | 'blue' | 'red' }> = {
-  pending: { label: 'Awaiting approval', colorKey: 'orange' },
-  booked: { label: 'Confirmed', colorKey: 'green' },
-  paid: { label: 'Paid', colorKey: 'blue' },
+  pending: { label: 'Pending payment', colorKey: 'orange' },
+  payment_submitted: { label: 'Verifying payment', colorKey: 'orange' },
+  paid: { label: 'Confirmed & paid', colorKey: 'blue' },
   canceled: { label: 'Canceled', colorKey: 'red' },
 };
 
@@ -22,9 +23,27 @@ function BookingCard({ booking, onCancel, onEdit, onPress, t }: BookingCardProps
   const config = STATUS_CONFIG[booking.status] || STATUS_CONFIG.pending;
   const slots = booking.slots as BookingSlot[];
   const isCanceled = booking.status === 'canceled';
-  const canCancel = booking.status === 'pending' || booking.status === 'booked';
-  const canEdit = (booking.status === 'pending' || booking.status === 'booked') && onEdit != null;
+  const canCancel = booking.status === 'pending' || booking.status === 'payment_submitted';
+  const canEdit = booking.status === 'pending' && onEdit != null;
   const statusColor = t[config.colorKey];
+
+  const requestCancel = () => {
+    if (booking.status === 'payment_submitted') {
+      Alert.alert(
+        'Cancel booking?',
+        'If you already transferred money, contact the venue for a refund.',
+        [
+          { text: 'No', style: 'cancel' },
+          { text: 'Yes', style: 'destructive', onPress: () => onCancel(booking.id) },
+        ],
+      );
+    } else {
+      Alert.alert('Cancel booking?', 'This cannot be undone.', [
+        { text: 'No', style: 'cancel' },
+        { text: 'Yes', style: 'destructive', onPress: () => onCancel(booking.id) },
+      ]);
+    }
+  };
 
   return (
     <Pressable
@@ -48,36 +67,43 @@ function BookingCard({ booking, onCancel, onEdit, onPress, t }: BookingCardProps
         {slots.map((s) => s.courtName).filter((v, i, a) => a.indexOf(v) === i).join(', ')}
       </Text>
       <Text style={{ fontSize: 15, fontWeight: '700', color: t.accent, marginTop: 8 }}>
-        {booking.totalPrice >= 1000 ? `${Math.round(booking.totalPrice / 1000)}k` : `${booking.totalPrice}k`}
+        {formatVndFull(booking.totalPrice)}
       </Text>
-      {(canEdit || canCancel) && (
-        <View style={styles.actions}>
-          {canEdit ? (
-            <Pressable
-              onPress={(e) => {
-                e?.stopPropagation?.();
-                onEdit!(booking);
-              }}
-              style={[styles.secondaryBtn, { borderColor: t.accent }]}
-            >
-              <Text style={{ color: t.accent, fontSize: 12, fontWeight: '700' }}>Edit request</Text>
-            </Pressable>
-          ) : null}
-          {canCancel ? (
-            <Pressable
-              onPress={(e) => {
-                e?.stopPropagation?.();
-                onCancel(booking.id);
-              }}
-              style={[styles.cancelBtn, { borderColor: t.red }]}
-            >
-              <Text style={{ color: t.red, fontSize: 12, fontWeight: '700' }}>
-                {booking.status === 'pending' ? 'Cancel Request' : 'Cancel Booking'}
-              </Text>
-            </Pressable>
-          ) : null}
-        </View>
-      )}
+      <View style={styles.actions}>
+        {booking.status === 'pending' ? (
+          <Pressable
+            onPress={(e) => {
+              e?.stopPropagation?.();
+              onPress();
+            }}
+            style={[styles.payBtn, { backgroundColor: t.accent }]}
+          >
+            <Text style={{ color: '#000', fontSize: 12, fontWeight: '800' }}>Pay now</Text>
+          </Pressable>
+        ) : null}
+        {canEdit ? (
+          <Pressable
+            onPress={(e) => {
+              e?.stopPropagation?.();
+              onEdit!(booking);
+            }}
+            style={[styles.secondaryBtn, { borderColor: t.accent }]}
+          >
+            <Text style={{ color: t.accent, fontSize: 12, fontWeight: '700' }}>Edit request</Text>
+          </Pressable>
+        ) : null}
+        {canCancel ? (
+          <Pressable
+            onPress={(e) => {
+              e?.stopPropagation?.();
+              requestCancel();
+            }}
+            style={[styles.cancelBtn, { borderColor: t.red }]}
+          >
+            <Text style={{ color: t.red, fontSize: 12, fontWeight: '700' }}>Cancel</Text>
+          </Pressable>
+        ) : null}
+      </View>
     </Pressable>
   );
 }
@@ -92,6 +118,11 @@ const styles = StyleSheet.create({
     flexWrap: 'wrap',
     gap: 8,
     alignItems: 'center',
+  },
+  payBtn: {
+    paddingVertical: 8,
+    paddingHorizontal: 16,
+    borderRadius: 10,
   },
   secondaryBtn: {
     paddingVertical: 8,

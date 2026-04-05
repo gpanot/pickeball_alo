@@ -1,11 +1,13 @@
-import React from 'react';
+import React, { useCallback, useEffect } from 'react';
 import { View, Text, Pressable, ScrollView, StyleSheet } from 'react-native';
 import { useRouter } from 'expo-router';
 import { useSafeAreaInsets } from 'react-native-safe-area-context';
 import BookHomeTopBar from '@/components/search/BookHomeTopBar';
 import SearchFormFields from '@/components/search/SearchFormFields';
+import MapsExploreSearch from '@/components/maps/MapsExploreSearch';
 import { SearchIcon } from '@/components/Icons';
 import { useCourtMap } from '@/context/CourtMapContext';
+import type { VenueResult } from '@/lib/types';
 
 export default function SearchRoute() {
   const router = useRouter();
@@ -13,6 +15,7 @@ export default function SearchRoute() {
   const ctx = useCourtMap();
   const {
     t,
+    venues,
     searchQuery,
     setSearchQuery,
     selectedDate,
@@ -24,16 +27,55 @@ export default function SearchRoute() {
     handleSearch,
     catalogVenueCount,
     userName,
+    fetchExploreMapVenues,
   } = ctx;
+
+  useEffect(() => {
+    if (venues.length > 0) return;
+    void fetchExploreMapVenues({
+      lat: 10.79,
+      lng: 106.71,
+      radiusKm: 25,
+      reason: 'book-home-catalog',
+    });
+  }, [venues.length, fetchExploreMapVenues]);
+
+  const onPickVenueFromBook = useCallback(
+    (v: VenueResult) => {
+      setSearchQuery(v.name);
+    },
+    [setSearchQuery],
+  );
+
+  const onPickPlaceFromBook = useCallback(
+    (lat: number, lng: number) => {
+      void fetchExploreMapVenues({
+        lat,
+        lng,
+        radiusKm: 12,
+        reason: 'book-home-place',
+      });
+    },
+    [fetchExploreMapVenues],
+  );
 
   return (
     <View style={[styles.root, { backgroundColor: t.bg }]}>
-      <BookHomeTopBar
-        catalogVenueCount={catalogVenueCount}
-        userName={userName}
-        onOpenProfile={() => router.push('/(tabs)/profile')}
-        t={t}
-      />
+      <View style={[styles.topStack, { backgroundColor: t.bg }]}>
+        <BookHomeTopBar
+          catalogVenueCount={catalogVenueCount}
+          userName={userName}
+          onOpenProfile={() => router.push('/(tabs)/profile')}
+          t={t}
+        />
+        <MapsExploreSearch
+          venues={venues}
+          t={t}
+          onPickVenue={onPickVenueFromBook}
+          onPickPlace={onPickPlaceFromBook}
+          onQueryChange={setSearchQuery}
+        />
+      </View>
       <View style={[styles.gradTop, { backgroundColor: t.accentBg }]} />
       <ScrollView
         style={{ flex: 1 }}
@@ -50,6 +92,7 @@ export default function SearchRoute() {
           onDateChange={setSelectedDate}
           onDurationChange={setSelectedDuration}
           onTimeChange={setSelectedTime}
+          hideLocationSearch
         />
       </ScrollView>
       <View
@@ -75,6 +118,8 @@ export default function SearchRoute() {
 
 const styles = StyleSheet.create({
   root: { flex: 1 },
+  /** Keep venue/places dropdown above the ScrollView (sibling order paints later on top). */
+  topStack: { zIndex: 20, elevation: 20 },
   gradTop: { height: 8, marginHorizontal: 20, opacity: 0.5, borderRadius: 4 },
   ctaWrap: {
     position: 'absolute',

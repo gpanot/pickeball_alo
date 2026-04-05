@@ -4,6 +4,7 @@ import { useCallback, useEffect, useState } from 'react';
 import { darkTheme } from '@/lib/theme';
 import { readAdminSession, clearAdminSession } from '@/lib/admin-storage';
 import { adminAuthHeaders, withVenueQuery } from '@/lib/admin-api';
+import { buildVietQrImageUrl, pickDynamicQrPayment } from '@/lib/vietqr';
 import { useRouter } from 'next/navigation';
 
 const t = darkTheme;
@@ -14,12 +15,17 @@ type PaymentRow = {
   accountName: string;
   accountNumber: string;
   qrImageUrl: string | null;
+  bankBin: string | null;
+  isDefaultForDynamicQr: boolean;
   sortOrder: number;
 };
+
+type BankOpt = { id: string; name: string; bin: string };
 
 export default function AdminPaymentsPage() {
   const router = useRouter();
   const [payments, setPayments] = useState<PaymentRow[]>([]);
+  const [banks, setBanks] = useState<BankOpt[]>([]);
   const [busy, setBusy] = useState(false);
   const [editingId, setEditingId] = useState<string | null>(null);
   const [draft, setDraft] = useState<Omit<PaymentRow, 'id' | 'sortOrder'>>({
@@ -27,6 +33,8 @@ export default function AdminPaymentsPage() {
     accountName: '',
     accountNumber: '',
     qrImageUrl: null,
+    bankBin: null,
+    isDefaultForDynamicQr: false,
   });
 
   const reload = useCallback(() => {
@@ -39,21 +47,86 @@ export default function AdminPaymentsPage() {
         if (r.status === 401) { clearAdminSession(); router.replace('/admin'); return null; }
         return r.json();
       })
-      .then((rows) => { if (Array.isArray(rows)) setPayments(rows); })
+      .then((rows) => {
+        if (Array.isArray(rows)) {
+          setPayments(
+            rows.map((r) => ({
+              ...r,
+              bankBin: r.bankBin ?? null,
+              isDefaultForDynamicQr: Boolean(r.isDefaultForDynamicQr),
+            })),
+          );
+        }
+      })
       .catch(() => {});
   }, [router]);
 
   useEffect(() => { reload(); }, [reload]);
 
+  useEffect(() => {
+    fetch('/api/banks')
+      .then((r) => r.json())
+      .then((rows: BankOpt[]) => (Array.isArray(rows) ? setBanks(rows) : setBanks([])))
+      .catch(() => setBanks([]));
+  }, []);
+
   const startAdd = () => {
     setEditingId('__new__');
-    setDraft({ bank: '', accountName: '', accountNumber: '', qrImageUrl: null });
+    setDraft({
+      bank: '',
+      accountName: '',
+      accountNumber: '',
+      qrImageUrl: null,
+      bankBin: null,
+      isDefaultForDynamicQr: payments.length === 0,
+    });
   };
 
   const startEdit = (p: PaymentRow) => {
     setEditingId(p.id);
-    setDraft({ bank: p.bank, accountName: p.accountName, accountNumber: p.accountNumber, qrImageUrl: p.qrImageUrl });
+    setDraft({
+      bank: p.bank,
+      accountName: p.accountName,
+      accountNumber: p.accountNumber,
+      qrImageUrl: p.qrImageUrl,
+      bankBin: p.bankBin,
+      isDefaultForDynamicQr: p.isDefaultForDynamicQr,
+    });
   };
+
+  const applyBankPick = (name: string) => {
+    const match = banks.find((b) => b.name.toLowerCase() === name.trim().toLowerCase());
+    setDraft((d) => ({
+      ...d,
+      bank: name,
+      bankBin: match ? match.bin : d.bankBin,
+    }));
+  };
+
+  const previewUrl =
+    draft.bankBin &&
+    draft.bankBin.length === 6 &&
+    draft.accountNumber.trim() &&
+    draft.accountName.trim()
+      ? buildVietQrImageUrl({
+          bankBin: draft.bankBin,
+          accountNumber: draft.accountNumber.trim(),
+          accountName: draft.accountName.trim(),
+          amountVnd: 1000,
+          orderId: 'preview000000',
+        })
+      : null;
+
+  const hasDynamicVenue =
+    pickDynamicQrPayment(
+      payments.map((p) => ({
+        bankBin: p.bankBin,
+        accountName: p.accountName,
+        accountNumber: p.accountNumber,
+        isDefaultForDynamicQr: p.isDefaultForDynamicQr,
+        sortOrder: p.sortOrder,
+      })),
+    ) != null;
 
   const cancel = () => setEditingId(null);
 
@@ -159,6 +232,28 @@ export default function AdminPaymentsPage() {
         Bank accounts and QR codes shown to players when they book a court. Players will transfer to one of these accounts to complete their booking.
       </p>
 
+      <datalist id="courtmap-banks">
+        {banks.map((b) => (
+          <option key={b.id} value={b.name} />
+        ))}
+      </datalist>
+
+      {!hasDynamicVenue && payments.length > 0 ? (
+        <div
+          style={{
+            marginBottom: 16,
+            padding: 12,
+            borderRadius: 10,
+            background: `${t.orange}18`,
+            border: `1px solid ${t.orange}55`,
+            color: t.text,
+            fontSize: 14,
+          }}
+        >
+          Add a valid 6-digit bank BIN and mark one account as default for dynamic VietQR so players get a prefilled payment QR.
+        </div>
+      ) : null}
+
       {payments.map((p) => (
         <div key={p.id} style={cardStyle}>
           {editingId === p.id ? (
@@ -167,9 +262,40 @@ export default function AdminPaymentsPage() {
               <input
                 style={inputStyle}
                 value={draft.bank}
-                onChange={(e) => setDraft({ ...draft, bank: e.target.value })}
-                placeholder="e.g. TECHCOMBANK"
+                list="courtmap-banks"
+                onChange={(e) => applyBankPick(e.target.value)}
+                placeholder="e.g. Techcombank"
               />
+              <label style={labelStyle}>Bank BIN (6 digits, VietQR)</label>
+              <input
+                style={inputStyle}
+                value={draft.bankBin ?? ''}
+                onChange={(e) =>
+                  setDraft({
+                    ...draft,
+                    bankBin: e.target.value.replace(/\D/g, '').slice(0, 6) || null,
+                  })
+                }
+                placeholder="970436"
+                inputMode="numeric"
+                maxLength={6}
+              />
+              <label style={{ ...labelStyle, display: 'flex', alignItems: 'center', gap: 8, cursor: 'pointer' }}>
+                <input
+                  type="checkbox"
+                  checked={draft.isDefaultForDynamicQr}
+                  onChange={(e) => setDraft({ ...draft, isDefaultForDynamicQr: e.target.checked })}
+                />
+                Default account for dynamic VietQR (one per venue)
+              </label>
+              {previewUrl ? (
+                <div style={{ marginTop: 12 }}>
+                  <div style={{ ...labelStyle, marginTop: 0 }}>Test QR (1.000 ₫, ref CM-PREVIEW)</div>
+                  <a href={previewUrl} target="_blank" rel="noreferrer" style={{ color: t.blue, fontSize: 13 }}>
+                    Open VietQR preview image
+                  </a>
+                </div>
+              ) : null}
               <label style={labelStyle}>Account name</label>
               <input
                 style={inputStyle}
@@ -231,6 +357,12 @@ export default function AdminPaymentsPage() {
             <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'flex-start', gap: 12, flexWrap: 'wrap' }}>
               <div style={{ flex: 1, minWidth: 200 }}>
                 <div style={{ fontWeight: 700, fontSize: 15 }}>{p.bank}</div>
+                {p.bankBin ? (
+                  <div style={{ fontSize: 12, color: t.textMuted, marginTop: 2 }}>BIN {p.bankBin}</div>
+                ) : null}
+                {p.isDefaultForDynamicQr ? (
+                  <div style={{ fontSize: 11, fontWeight: 700, color: t.accent, marginTop: 4 }}>Default VietQR</div>
+                ) : null}
                 <div style={{ fontSize: 14, color: t.textSec, marginTop: 4 }}>{p.accountName}</div>
                 <div style={{ fontSize: 14, color: t.text, marginTop: 2, fontFamily: 'monospace' }}>{p.accountNumber}</div>
               </div>
@@ -259,9 +391,40 @@ export default function AdminPaymentsPage() {
           <input
             style={inputStyle}
             value={draft.bank}
-            onChange={(e) => setDraft({ ...draft, bank: e.target.value })}
-            placeholder="e.g. TECHCOMBANK"
+            list="courtmap-banks"
+            onChange={(e) => applyBankPick(e.target.value)}
+            placeholder="e.g. Techcombank"
           />
+          <label style={labelStyle}>Bank BIN (6 digits, VietQR)</label>
+          <input
+            style={inputStyle}
+            value={draft.bankBin ?? ''}
+            onChange={(e) =>
+              setDraft({
+                ...draft,
+                bankBin: e.target.value.replace(/\D/g, '').slice(0, 6) || null,
+              })
+            }
+            placeholder="970436"
+            inputMode="numeric"
+            maxLength={6}
+          />
+          <label style={{ ...labelStyle, display: 'flex', alignItems: 'center', gap: 8, cursor: 'pointer' }}>
+            <input
+              type="checkbox"
+              checked={draft.isDefaultForDynamicQr}
+              onChange={(e) => setDraft({ ...draft, isDefaultForDynamicQr: e.target.checked })}
+            />
+            Default account for dynamic VietQR (one per venue)
+          </label>
+          {previewUrl ? (
+            <div style={{ marginTop: 12 }}>
+              <div style={{ ...labelStyle, marginTop: 0 }}>Test QR (1.000 ₫, ref CM-PREVIEW)</div>
+              <a href={previewUrl} target="_blank" rel="noreferrer" style={{ color: t.blue, fontSize: 13 }}>
+                Open VietQR preview image
+              </a>
+            </div>
+          ) : null}
           <label style={labelStyle}>Account name</label>
           <input
             style={inputStyle}

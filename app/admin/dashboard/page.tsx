@@ -37,15 +37,19 @@ export default function AdminDashboardPage() {
   const [stats, setStats] = useState<{
     today: string;
     pendingCount: number;
+    paymentSubmittedCount: number;
     confirmedToday: number;
     revenueToday: number;
     courtsActive: number;
     courtsTotal: number;
   } | null>(null);
-  const [pending, setPending] = useState<BookingResult[]>([]);
+  const [paymentSubmitted, setPaymentSubmitted] = useState<BookingResult[]>([]);
+  const [pendingNew, setPendingNew] = useState<BookingResult[]>([]);
   const [venue, setVenue] = useState<VenueResult | null>(null);
   const [rejectId, setRejectId] = useState<string | null>(null);
   const [rejectNote, setRejectNote] = useState('');
+  const [notReceivedId, setNotReceivedId] = useState<string | null>(null);
+  const [notReceivedNote, setNotReceivedNote] = useState('');
   const [busyId, setBusyId] = useState<string | null>(null);
 
   const handleAuthFail = useCallback(() => {
@@ -65,14 +69,27 @@ export default function AdminDashboardPage() {
       .then((d) => d && setStats(d))
       .catch(() => setStats(null));
 
+    fetch(withVenueQuery('/api/admin/bookings', vId) + '&status=payment_submitted', {
+      headers: adminAuthHeaders(token),
+    })
+      .then((r) => { if (!r.ok) throw new Error(); return r.json(); })
+      .then((rows: BookingResult[]) =>
+        setPaymentSubmitted(
+          Array.isArray(rows) ? rows.sort((a, b) => +new Date(b.createdAt) - +new Date(a.createdAt)) : [],
+        ),
+      )
+      .catch(() => setPaymentSubmitted([]));
+
     fetch(withVenueQuery('/api/admin/bookings', vId) + '&status=pending', {
       headers: adminAuthHeaders(token),
     })
       .then((r) => { if (!r.ok) throw new Error(); return r.json(); })
       .then((rows: BookingResult[]) =>
-        setPending(Array.isArray(rows) ? rows.sort((a, b) => +new Date(b.createdAt) - +new Date(a.createdAt)) : []),
+        setPendingNew(
+          Array.isArray(rows) ? rows.sort((a, b) => +new Date(b.createdAt) - +new Date(a.createdAt)) : [],
+        ),
       )
-      .catch(() => setPending([]));
+      .catch(() => setPendingNew([]));
 
     const today = toLocalDateKey(new Date());
     fetch(`/api/venues/${vId}?date=${today}`)
@@ -114,6 +131,8 @@ export default function AdminDashboardPage() {
       setBusyId(null);
       setRejectId(null);
       setRejectNote('');
+      setNotReceivedId(null);
+      setNotReceivedNote('');
     }
   };
 
@@ -134,8 +153,13 @@ export default function AdminDashboardPage() {
         }}
       >
         {[
-          { label: 'Pending', value: stats?.pendingCount ?? '—', color: t.orange },
-          { label: 'Confirmed today', value: stats?.confirmedToday ?? '—', color: t.green },
+          { label: 'Pending pay', value: stats?.pendingCount ?? '—', color: t.orange },
+          {
+            label: 'Verify pay',
+            value: stats?.paymentSubmittedCount ?? '—',
+            color: '#E8C547',
+          },
+          { label: 'Paid today', value: stats?.confirmedToday ?? '—', color: t.green },
           {
             label: 'Revenue today',
             value: stats ? formatVndFull(stats.revenueToday) : '—',
@@ -166,7 +190,156 @@ export default function AdminDashboardPage() {
 
       <section style={{ marginBottom: 24 }}>
         <div style={{ display: 'flex', alignItems: 'center', gap: 8, marginBottom: 12 }}>
-          <h2 style={{ margin: 0, fontSize: 17 }}>Needs your action</h2>
+          <h2 style={{ margin: 0, fontSize: 17 }}>Verify payment</h2>
+          <span
+            style={{
+              background: '#E8C547',
+              color: '#000',
+              fontSize: 12,
+              fontWeight: 700,
+              padding: '2px 8px',
+              borderRadius: 8,
+            }}
+          >
+            {paymentSubmitted.length}
+          </span>
+        </div>
+        <p style={{ margin: '0 0 12px', fontSize: 13, color: t.textSec }}>
+          Player marked “I&apos;ve paid”. Check your bank, then confirm or send back to pending.
+        </p>
+        {paymentSubmitted.length === 0 ? (
+          <div style={{ color: t.textSec, fontSize: 14 }}>No bookings awaiting payment verification.</div>
+        ) : (
+          <div style={{ display: 'flex', flexDirection: 'column', gap: 12 }}>
+            {paymentSubmitted.map((b) => (
+              <div
+                key={b.id}
+                style={{
+                  background: t.bgCard,
+                  border: `1px solid ${t.border}`,
+                  borderRadius: 12,
+                  padding: 14,
+                }}
+              >
+                <div style={{ fontWeight: 800, marginBottom: 6 }}>{formatBookingOrderRef(b.orderId)}</div>
+                <div style={{ fontSize: 15, marginBottom: 4 }}>{b.userName}</div>
+                <a href={`tel:${b.userPhone}`} style={{ color: t.blue, fontSize: 14 }}>
+                  {b.userPhone}
+                </a>
+                <div style={{ fontSize: 13, color: t.textSec, marginTop: 8 }}>
+                  {slotSummary(b.slots as { courtName?: string; time?: string }[])}
+                </div>
+                <div style={{ fontSize: 13, color: t.textSec, marginTop: 4 }}>
+                  {formatVndFull(b.totalPrice)} · submitted {b.paymentSubmittedAt ? formatRelativeTime(b.paymentSubmittedAt) : '—'}
+                </div>
+                {notReceivedId === b.id ? (
+                  <div style={{ marginTop: 12 }}>
+                    <textarea
+                      value={notReceivedNote}
+                      onChange={(e) => setNotReceivedNote(e.target.value)}
+                      placeholder="Note (optional, e.g. transfer not found)"
+                      rows={2}
+                      style={{
+                        width: '100%',
+                        boxSizing: 'border-box',
+                        borderRadius: 8,
+                        border: `1px solid ${t.border}`,
+                        background: t.bgInput,
+                        color: t.text,
+                        padding: 8,
+                        fontFamily: 'inherit',
+                        marginBottom: 8,
+                      }}
+                    />
+                    <div style={{ display: 'flex', gap: 8 }}>
+                      <button
+                        type="button"
+                        disabled={busyId === b.id}
+                        onClick={() =>
+                          patchBooking(b.id, { status: 'pending', paymentNote: notReceivedNote })
+                        }
+                        style={{
+                          flex: 1,
+                          padding: 10,
+                          borderRadius: 8,
+                          border: 'none',
+                          background: t.orange,
+                          color: '#000',
+                          fontWeight: 600,
+                          cursor: 'pointer',
+                          fontFamily: 'inherit',
+                        }}
+                      >
+                        Confirm not received
+                      </button>
+                      <button
+                        type="button"
+                        onClick={() => {
+                          setNotReceivedId(null);
+                          setNotReceivedNote('');
+                        }}
+                        style={{
+                          padding: '10px 14px',
+                          borderRadius: 8,
+                          border: `1px solid ${t.border}`,
+                          background: 'transparent',
+                          color: t.textSec,
+                          fontFamily: 'inherit',
+                        }}
+                      >
+                        Cancel
+                      </button>
+                    </div>
+                  </div>
+                ) : (
+                  <div style={{ display: 'flex', gap: 8, marginTop: 12 }}>
+                    <button
+                      type="button"
+                      disabled={busyId === b.id}
+                      onClick={() => patchBooking(b.id, { status: 'paid' })}
+                      style={{
+                        flex: 1,
+                        padding: 10,
+                        borderRadius: 8,
+                        border: 'none',
+                        background: t.green,
+                        color: '#fff',
+                        fontWeight: 600,
+                        cursor: 'pointer',
+                        fontFamily: 'inherit',
+                      }}
+                    >
+                      Confirm paid
+                    </button>
+                    <button
+                      type="button"
+                      disabled={busyId === b.id}
+                      onClick={() => setNotReceivedId(b.id)}
+                      style={{
+                        flex: 1,
+                        padding: 10,
+                        borderRadius: 8,
+                        border: 'none',
+                        background: t.orange,
+                        color: '#000',
+                        fontWeight: 600,
+                        cursor: 'pointer',
+                        fontFamily: 'inherit',
+                      }}
+                    >
+                      Not received
+                    </button>
+                  </div>
+                )}
+              </div>
+            ))}
+          </div>
+        )}
+      </section>
+
+      <section style={{ marginBottom: 24 }}>
+        <div style={{ display: 'flex', alignItems: 'center', gap: 8, marginBottom: 12 }}>
+          <h2 style={{ margin: 0, fontSize: 17 }}>New requests</h2>
           <span
             style={{
               background: t.orange,
@@ -177,14 +350,17 @@ export default function AdminDashboardPage() {
               borderRadius: 8,
             }}
           >
-            {pending.length}
+            {pendingNew.length}
           </span>
         </div>
-        {pending.length === 0 ? (
-          <div style={{ color: t.textSec, fontSize: 14 }}>No pending bookings.</div>
+        <p style={{ margin: '0 0 12px', fontSize: 13, color: t.textSec }}>
+          Awaiting player payment. Reject if you cannot host the booking.
+        </p>
+        {pendingNew.length === 0 ? (
+          <div style={{ color: t.textSec, fontSize: 14 }}>No new unpaid requests.</div>
         ) : (
           <div style={{ display: 'flex', flexDirection: 'column', gap: 12 }}>
-            {pending.map((b) => (
+            {pendingNew.map((b) => (
               <div
                 key={b.id}
                 style={{
@@ -266,24 +442,6 @@ export default function AdminDashboardPage() {
                   </div>
                 ) : (
                   <div style={{ display: 'flex', gap: 8, marginTop: 12 }}>
-                    <button
-                      type="button"
-                      disabled={busyId === b.id}
-                      onClick={() => patchBooking(b.id, { status: 'booked' })}
-                      style={{
-                        flex: 1,
-                        padding: 10,
-                        borderRadius: 8,
-                        border: 'none',
-                        background: t.green,
-                        color: '#fff',
-                        fontWeight: 600,
-                        cursor: 'pointer',
-                        fontFamily: 'inherit',
-                      }}
-                    >
-                      Approve
-                    </button>
                     <button
                       type="button"
                       disabled={busyId === b.id}

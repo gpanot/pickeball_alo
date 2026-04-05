@@ -16,6 +16,7 @@ import {
 } from '@/lib/formatters';
 import type { ThemeTokens } from '@/lib/theme';
 import type { VenueResult, BookingResult } from '@/lib/types';
+import { getVenue } from '@/lib/api';
 
 interface VenueDetailProps {
   venue: VenueResult;
@@ -129,7 +130,33 @@ export default function VenueDetail({
   t,
 }: VenueDetailProps) {
   const [detailTab, setDetailTab] = useState<'avail' | 'pricing' | 'info'>('avail');
-  const pricingTables = Array.isArray(venue.pricingTables) ? venue.pricingTables : [];
+  /** Search/list venues omit `payments`; hydrate from GET /api/venues/[id] for booking payment UI. */
+  const [paymentHydration, setPaymentHydration] = useState<VenueResult | null>(null);
+
+  useEffect(() => {
+    setPaymentHydration(null);
+  }, [venue.id]);
+
+  useEffect(() => {
+    if (!visible) return;
+    if (venue.payments !== undefined) return;
+    let cancelled = false;
+    void getVenue(venue.id, searchDate).then((v) => {
+      if (!cancelled) setPaymentHydration(v);
+    });
+    return () => {
+      cancelled = true;
+    };
+  }, [visible, venue.id, searchDate, venue.payments]);
+
+  const displayVenue: VenueResult =
+    venue.payments !== undefined
+      ? venue
+      : paymentHydration?.id === venue.id
+        ? { ...paymentHydration, distance: paymentHydration.distance ?? venue.distance }
+        : venue;
+
+  const pricingTables = Array.isArray(displayVenue.pricingTables) ? displayVenue.pricingTables : [];
   const [step, setStep] = useState<SheetStep>('detail');
   const [completedBooking, setCompletedBooking] = useState<BookingResult | null>(null);
   /** When sheet opens: earliest pre-selected time so Availability scrolls there first (not 5am). */
@@ -161,19 +188,19 @@ export default function VenueDetail({
       setAvailabilityScrollAnchor(null);
       return;
     }
-    const names = venue.courts.map((c) => c.name);
+    const names = displayVenue.courts.map((c) => c.name);
     setAvailabilityScrollAnchor(earliestSelectedSlotTime(selectedSlotsRef.current, names));
     // eslint-disable-next-line react-hooks/exhaustive-deps -- anchor only when sheet opens; court list keyed by venue.id
-  }, [visible, venue.id]);
+  }, [visible, displayVenue.courts, venue.id]);
 
   const selArr = useMemo(() => {
     return [...selectedSlots].map((k) => {
       const [courtName, time] = k.split('|');
-      const court = venue.courts.find((c) => c.name === courtName);
+      const court = displayVenue.courts.find((c) => c.name === courtName);
       const slot = court?.slots.find((s) => s.time === time);
       return { courtName, time, price: slot?.price || 0 };
     });
-  }, [selectedSlots, venue.courts]);
+  }, [selectedSlots, displayVenue.courts]);
 
   const totalPrice = selArr.reduce((s, x) => s + x.price, 0);
 
@@ -251,9 +278,9 @@ export default function VenueDetail({
               <div style={{ padding: '4px 20px 16px' }}>
                 <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'flex-start' }}>
                   <div style={{ flex: 1 }}>
-                    <h2 style={{ fontSize: 21, fontWeight: 800, color: t.text, margin: 0, lineHeight: 1.2 }}>{venue.name}</h2>
+                    <h2 style={{ fontSize: 21, fontWeight: 800, color: t.text, margin: 0, lineHeight: 1.2 }}>{displayVenue.name}</h2>
                     <div style={{ fontSize: 13, color: t.textSec, marginTop: 6, display: 'flex', alignItems: 'center', gap: 6 }}>
-                      <PinIcon /> {venue.address}
+                      <PinIcon /> {displayVenue.address}
                     </div>
                   </div>
                   <div style={{ display: 'flex', gap: 8, marginLeft: 12, flexShrink: 0 }}>
@@ -281,23 +308,23 @@ export default function VenueDetail({
                 <div style={{ display: 'flex', gap: 10, marginTop: 14, flexWrap: 'wrap' }}>
                   <div style={{ display: 'flex', alignItems: 'center', gap: 4, background: t.accentBg, padding: '6px 12px', borderRadius: 10 }}>
                     <span style={{ color: t.accent }}><StarIcon /></span>
-                    <span style={{ fontWeight: 700, fontSize: 14, color: t.text }}>{venue.rating}</span>
-                    <span style={{ fontSize: 12, color: t.textSec }}>({venue.reviewCount})</span>
+                    <span style={{ fontWeight: 700, fontSize: 14, color: t.text }}>{displayVenue.rating}</span>
+                    <span style={{ fontSize: 12, color: t.textSec }}>({displayVenue.reviewCount})</span>
                   </div>
                   <div style={{ display: 'flex', alignItems: 'center', gap: 4, background: t.bgCard, padding: '6px 12px', borderRadius: 10, border: `1px solid ${t.border}` }}>
                     <span style={{ color: t.textSec }}><CourtIcon /></span>
-                    <span style={{ fontSize: 13, fontWeight: 600, color: t.text }}>{venue.courts.length} courts</span>
+                    <span style={{ fontSize: 13, fontWeight: 600, color: t.text }}>{displayVenue.courts.length} courts</span>
                   </div>
-                  {venue.distance != null && (
+                  {displayVenue.distance != null && (
                     <div style={{ display: 'flex', alignItems: 'center', gap: 4, background: t.bgCard, padding: '6px 12px', borderRadius: 10, border: `1px solid ${t.border}` }}>
                       <span style={{ color: t.textSec }}><PinIcon /></span>
-                      <span style={{ fontSize: 13, fontWeight: 600, color: t.text }}>{venue.distance} km</span>
+                      <span style={{ fontSize: 13, fontWeight: 600, color: t.text }}>{displayVenue.distance} km</span>
                     </div>
                   )}
                 </div>
                 <div style={{ marginTop: 14, display: 'flex', alignItems: 'baseline', gap: 6 }}>
-                  <span style={{ fontSize: 24, fontWeight: 800, color: t.accent }}>{formatPrice(venue.priceMin)}</span>
-                  <span style={{ fontSize: 14, color: t.textSec }}>to {formatPrice(venue.priceMax)}/hour</span>
+                  <span style={{ fontSize: 24, fontWeight: 800, color: t.accent }}>{formatPrice(displayVenue.priceMin)}</span>
+                  <span style={{ fontSize: 14, color: t.textSec }}>to {formatPrice(displayVenue.priceMax)}/hour</span>
                 </div>
               </div>
 
@@ -344,7 +371,7 @@ export default function VenueDetail({
                       t={t}
                     />
                     <AvailabilityTab
-                      courts={venue.courts}
+                      courts={displayVenue.courts}
                       selectedSlots={selectedSlots}
                       scrollAnchorTime={availabilityScrollAnchor ?? searchHourScrollAnchor}
                       onToggleSlot={onToggleSlot}
@@ -355,19 +382,19 @@ export default function VenueDetail({
                 {detailTab === 'pricing' && (
                   <PricingTab
                     pricingTables={pricingTables}
-                    hasMemberPricing={venue.hasMemberPricing}
-                    venuePhone={venue.phone}
+                    hasMemberPricing={displayVenue.hasMemberPricing}
+                    venuePhone={displayVenue.phone}
                     t={t}
                   />
                 )}
-                {detailTab === 'info' && <InfoTab venue={venue} t={t} />}
+                {detailTab === 'info' && <InfoTab venue={displayVenue} t={t} />}
               </div>
             </>
           )}
 
           {step === 'booking' && (
             <BookingForm
-              venue={venue}
+              venue={displayVenue}
               selectedSlots={selArr}
               totalPrice={totalPrice}
               searchDate={searchDate}
@@ -381,12 +408,7 @@ export default function VenueDetail({
           )}
 
           {step === 'confirmation' && completedBooking && (
-            <BookingConfirmation
-              booking={completedBooking}
-              onViewBookings={() => { handleClose(); onViewBookings(); }}
-              onDone={handleClose}
-              t={t}
-            />
+            <BookingConfirmation booking={completedBooking} venue={displayVenue} userId={userId} t={t} />
           )}
         </div>
 
@@ -405,7 +427,7 @@ export default function VenueDetail({
             }}
           >
             <a
-              href={`https://www.google.com/maps/dir/?api=1&destination=${venue.lat},${venue.lng}`}
+              href={`https://www.google.com/maps/dir/?api=1&destination=${displayVenue.lat},${displayVenue.lng}`}
               target="_blank"
               rel="noopener noreferrer"
               style={{

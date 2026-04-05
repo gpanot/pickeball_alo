@@ -4,12 +4,17 @@ import { prisma } from '@/lib/prisma';
 import { HttpError } from '@/lib/http-error';
 import { upsertPlayerProfileFromBooking } from '@/lib/player-profile-sync';
 import { markSlotsBooked, resolveSlotIdsForReserve } from '@/lib/slot-sync';
+import { autoCancelExpiredBookings } from '@/lib/booking-deadline';
+
+const PAYMENT_DEADLINE_MINUTES = 5;
 
 export async function GET(req: NextRequest) {
   const userId = req.nextUrl.searchParams.get('userId');
   if (!userId) {
     return NextResponse.json({ error: 'userId required' }, { status: 400 });
   }
+
+  await autoCancelExpiredBookings(prisma, { userId });
 
   const bookings = await prisma.booking.findMany({
     where: { userId },
@@ -36,6 +41,7 @@ export async function POST(req: NextRequest) {
           throw new HttpError(resolved.status, resolved.message);
         }
 
+        const deadline = new Date(Date.now() + PAYMENT_DEADLINE_MINUTES * 60_000);
         const created = await tx.booking.create({
           data: {
             venueId,
@@ -50,6 +56,7 @@ export async function POST(req: NextRequest) {
             totalPrice,
             notes: notes || null,
             status: 'pending',
+            paymentDeadline: deadline,
           },
         });
 

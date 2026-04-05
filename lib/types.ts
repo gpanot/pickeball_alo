@@ -20,6 +20,9 @@ export interface VenuePaymentResult {
   accountName: string;
   accountNumber: string;
   qrImageUrl: string | null;
+  bankBin: string | null;
+  isDefaultForDynamicQr: boolean;
+  sortOrder?: number;
 }
 
 export interface VenueResult {
@@ -73,7 +76,7 @@ export interface BookingSlot {
   price: number;
 }
 
-export type BookingStatus = 'pending' | 'booked' | 'paid' | 'canceled';
+export type BookingStatus = 'pending' | 'payment_submitted' | 'paid' | 'canceled';
 
 export interface BookingResult {
   id: string;
@@ -90,6 +93,11 @@ export interface BookingResult {
   totalPrice: number;
   notes: string | null;
   adminNote?: string | null;
+  paymentNote?: string | null;
+  paymentProofUrl?: string | null;
+  paymentDeadline?: string | null;
+  paymentSubmittedAt?: string | null;
+  paymentConfirmedAt?: string | null;
   reviewedAt?: string | null;
   reviewedBy?: string | null;
   status: BookingStatus;

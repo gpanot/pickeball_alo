@@ -286,16 +286,18 @@ export default function CourtMapApp() {
     }
   }, [userId]);
 
-  const handleCancelBooking = useCallback(async (id: string) => {
-    try {
-      await cancelBooking(id);
-      setBookings((prev) =>
-        prev.map((b) => (b.id === id ? { ...b, status: 'canceled' as const } : b)),
-      );
-    } catch (err) {
-      console.error('Failed to cancel booking:', err);
-    }
-  }, []);
+  const handleCancelBooking = useCallback(
+    async (id: string) => {
+      if (!userId) return;
+      try {
+        const updated = await cancelBooking(id, userId);
+        setBookings((prev) => prev.map((b) => (b.id === id ? updated : b)));
+      } catch (err) {
+        console.error('Failed to cancel booking:', err);
+      }
+    },
+    [userId],
+  );
 
   const handleNavigate = useCallback((s: Screen) => {
     if (s === 'bookings') loadBookings();
@@ -516,8 +518,10 @@ export default function CourtMapApp() {
           <MyBookingsScreen
             bookings={bookings}
             loading={bookingsLoading}
+            userId={userId}
             onBack={backFromSavedOrBookings}
             onCancel={handleCancelBooking}
+            onRefreshBookings={loadBookings}
             t={t}
           />
         )}

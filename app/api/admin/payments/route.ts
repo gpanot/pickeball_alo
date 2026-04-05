@@ -25,17 +25,33 @@ export async function POST(req: NextRequest) {
     return NextResponse.json({ error: 'bank, accountName, accountNumber required' }, { status: 400 });
   }
 
+  const bankBin =
+    typeof body.bankBin === 'string' && /^\d{6}$/.test(body.bankBin.trim())
+      ? body.bankBin.trim()
+      : null;
+  const isDefaultForDynamicQr = Boolean(body.isDefaultForDynamicQr);
+
   const count = await prisma.venuePayment.count({ where: { venueId: venueId! } });
 
-  const payment = await prisma.venuePayment.create({
-    data: {
-      venueId: venueId!,
-      bank: String(body.bank).slice(0, 120),
-      accountName: String(body.accountName).slice(0, 200),
-      accountNumber: String(body.accountNumber).slice(0, 60),
-      qrImageUrl: body.qrImageUrl ? String(body.qrImageUrl).slice(0, 500) : null,
-      sortOrder: count,
-    },
+  const payment = await prisma.$transaction(async (tx) => {
+    if (isDefaultForDynamicQr) {
+      await tx.venuePayment.updateMany({
+        where: { venueId: venueId! },
+        data: { isDefaultForDynamicQr: false },
+      });
+    }
+    return tx.venuePayment.create({
+      data: {
+        venueId: venueId!,
+        bank: String(body.bank).slice(0, 120),
+        accountName: String(body.accountName).slice(0, 200),
+        accountNumber: String(body.accountNumber).slice(0, 60),
+        qrImageUrl: body.qrImageUrl ? String(body.qrImageUrl).slice(0, 500) : null,
+        bankBin,
+        isDefaultForDynamicQr,
+        sortOrder: count,
+      },
+    });
   });
 
   return NextResponse.json(payment, { status: 201 });

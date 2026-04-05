@@ -150,23 +150,28 @@ export default function VenueDetailScreen({
   const fetchingRef = useRef(false);
   useEffect(() => {
     if (!visible || !venueId) return;
-    if (venue && venue.id === venueId) return;
+    // List/search payloads omit `payments`; we must load `/api/venues/[id]` for payment UI.
+    const hasFullDetail =
+      venue && venue.id === venueId && venue.payments !== undefined;
+    if (hasFullDetail) return;
     if (fetchingRef.current) return;
     fetchingRef.current = true;
     let cancelled = false;
     setLoadingVenue(true);
-    void getVenue(venueId, searchDate).then((v) => {
-      if (cancelled) return;
-      setVenue(v);
-      onVenueLoaded?.(v);
-      setLoadingVenue(false);
-      fetchingRef.current = false;
-    }).catch(() => {
-      if (!cancelled) {
+    void getVenue(venueId, searchDate)
+      .then((v) => {
+        if (cancelled) return;
+        setVenue(v);
+        onVenueLoaded?.(v);
         setLoadingVenue(false);
         fetchingRef.current = false;
-      }
-    });
+      })
+      .catch(() => {
+        if (!cancelled) {
+          setLoadingVenue(false);
+          fetchingRef.current = false;
+        }
+      });
     return () => {
       cancelled = true;
       fetchingRef.current = false;
@@ -354,6 +359,10 @@ export default function VenueDetailScreen({
                 onSuccess={handleBookingSuccess}
                 t={t}
               />
+            ) : step === 'confirmation' && completedBooking && venue ? (
+              <View style={{ flex: 1, minHeight: 0 }}>
+                <BookingConfirmation booking={completedBooking} venue={venue} userId={userId} t={t} />
+              </View>
             ) : (
             <ScrollView
               style={{ flex: 1 }}
@@ -485,18 +494,6 @@ export default function VenueDetailScreen({
                     {detailTab === 'info' && <InfoTab venue={venue} t={t} />}
                   </View>
                 </>
-              )}
-
-              {step === 'confirmation' && completedBooking && (
-                <BookingConfirmation
-                  booking={completedBooking}
-                  onViewBookings={() => {
-                    handleClose();
-                    onViewBookings();
-                  }}
-                  onDone={handleClose}
-                  t={t}
-                />
               )}
             </ScrollView>
             )}

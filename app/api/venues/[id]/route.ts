@@ -66,6 +66,9 @@ export async function GET(
       accountName: p.accountName,
       accountNumber: p.accountNumber,
       qrImageUrl: p.qrImageUrl,
+      bankBin: p.bankBin,
+      isDefaultForDynamicQr: p.isDefaultForDynamicQr,
+      sortOrder: p.sortOrder,
     })),
     courts: venue.courts.map((c) => ({
       id: c.id,

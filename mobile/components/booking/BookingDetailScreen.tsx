@@ -1,43 +1,92 @@
-import React from 'react';
-import { View, Text, Pressable, StyleSheet, Linking, Alert } from 'react-native';
+import React, { useCallback, useState } from 'react';
+import {
+  View,
+  Text,
+  Pressable,
+  StyleSheet,
+  Linking,
+  Alert,
+  Modal,
+  ActivityIndicator,
+  ScrollView,
+} from 'react-native';
 import { useSafeAreaInsets } from 'react-native-safe-area-context';
 import { PhoneIcon, PinIcon } from '@/components/Icons';
 import type { ThemeTokens } from '@/lib/theme';
-import type { BookingResult, BookingSlot } from '@/lib/types';
+import type { BookingResult, BookingSlot, VenueResult } from '@/lib/types';
+import { formatVndFull } from '@/lib/formatters';
+import { getVenue } from '@/lib/api';
+import VietQrPaymentPanel from '@/components/booking/VietQrPaymentPanel';
 
 interface BookingDetailScreenProps {
   booking: BookingResult;
+  userId: string;
   onCancel: (id: string) => void;
   onEditRequest?: (booking: BookingResult) => void;
+  onBookingRefresh?: () => void;
   t: ThemeTokens;
 }
 
-const STEPS = ['pending', 'booked', 'paid'];
+const STEP_ORDER = ['pending', 'payment_submitted', 'paid'] as const;
+const STEP_LABELS: Record<string, string> = {
+  pending: 'Requested',
+  payment_submitted: 'Verifying',
+  paid: 'Paid',
+};
 
-export default function BookingDetailScreen({ booking, onCancel, onEditRequest, t }: BookingDetailScreenProps) {
+export default function BookingDetailScreen({
+  booking,
+  userId,
+  onCancel,
+  onEditRequest,
+  onBookingRefresh,
+  t,
+}: BookingDetailScreenProps) {
   const insets = useSafeAreaInsets();
-  const slots = booking.slots as BookingSlot[];
-  const canCancel = booking.status === 'pending' || booking.status === 'booked';
-  const canEdit =
-    (booking.status === 'pending' || booking.status === 'booked') && onEditRequest != null;
-  const isCanceled = booking.status === 'canceled';
-  const currentStep = isCanceled ? -1 : STEPS.indexOf(booking.status);
+  const [live, setLive] = useState(booking);
+  React.useEffect(() => {
+    setLive(booking);
+  }, [booking]);
+
+  const slots = live.slots as BookingSlot[];
+  const isCanceled = live.status === 'canceled';
+  const canCancel = live.status === 'pending' || live.status === 'payment_submitted';
+  const canEdit = live.status === 'pending' && onEditRequest != null;
+  const currentStep = isCanceled ? -1 : STEP_ORDER.indexOf(live.status as (typeof STEP_ORDER)[number]);
+
+  const [payOpen, setPayOpen] = useState(false);
+  const [payVenue, setPayVenue] = useState<VenueResult | null>(null);
+  const [payLoading, setPayLoading] = useState(false);
+
+  const openPay = useCallback(async () => {
+    setPayOpen(true);
+    setPayLoading(true);
+    setPayVenue(null);
+    try {
+      const v = await getVenue(live.venueId, live.date);
+      setPayVenue(v);
+    } catch {
+      setPayVenue(null);
+    } finally {
+      setPayLoading(false);
+    }
+  }, [live.venueId, live.date]);
 
   const confirmCancel = () => {
-    Alert.alert(
-      'Cancel booking?',
-      'This cannot be undone.',
-      [
-        { text: 'No', style: 'cancel' },
-        { text: 'Yes', style: 'destructive', onPress: () => onCancel(booking.id) },
-      ],
-    );
+    const msg =
+      live.status === 'payment_submitted'
+        ? 'If you already transferred money, contact the venue for a refund. Continue?'
+        : 'This cannot be undone.';
+    Alert.alert('Cancel booking?', msg, [
+      { text: 'No', style: 'cancel' },
+      { text: 'Yes', style: 'destructive', onPress: () => onCancel(live.id) },
+    ]);
   };
 
   return (
     <View style={[styles.root, { backgroundColor: t.bg, paddingBottom: insets.bottom + 24 }]}>
       <View style={[styles.timeline, { marginBottom: 24 }]}>
-        {STEPS.map((step, i) => {
+        {STEP_ORDER.map((step, i) => {
           const isActive = i <= currentStep;
           const isCurrent = i === currentStep;
           return (
@@ -70,13 +119,12 @@ export default function BookingDetailScreen({ booking, onCancel, onEditRequest, 
                     fontSize: 10,
                     color: isActive ? t.text : t.textMuted,
                     fontWeight: '600',
-                    textTransform: 'capitalize',
                   }}
                 >
-                  {step}
+                  {STEP_LABELS[step] ?? step}
                 </Text>
               </View>
-              {i < STEPS.length - 1 && (
+              {i < STEP_ORDER.length - 1 && (
                 <View
                   style={{
                     width: 40,
@@ -110,9 +158,9 @@ export default function BookingDetailScreen({ booking, onCancel, onEditRequest, 
 
       <View style={[styles.card, { backgroundColor: t.bgCard, borderColor: t.border }]}>
         <Text style={{ fontWeight: '700', fontSize: 18, color: t.text, marginBottom: 12 }}>
-          {booking.venueName}
+          {live.venueName}
         </Text>
-        <Text style={{ fontSize: 14, color: t.textSec, marginBottom: 8 }}>Date: {booking.date}</Text>
+        <Text style={{ fontSize: 14, color: t.textSec, marginBottom: 8 }}>Date: {live.date}</Text>
         {slots.map((s, i) => (
           <View
             key={i}
@@ -128,39 +176,46 @@ export default function BookingDetailScreen({ booking, onCancel, onEditRequest, 
         ))}
         <View style={[styles.totalRow, { borderTopColor: t.border }]}>
           <Text style={{ fontWeight: '700', color: t.text }}>Total</Text>
-          <Text style={{ fontWeight: '800', color: t.accent }}>
-            {booking.totalPrice >= 1000 ? `${Math.round(booking.totalPrice / 1000)}k` : `${booking.totalPrice}k`}
-          </Text>
+          <Text style={{ fontWeight: '800', color: t.accent }}>{formatVndFull(live.totalPrice)}</Text>
         </View>
-        {booking.notes ? (
+        {live.notes ? (
           <View style={[styles.notes, { backgroundColor: t.bgInput }]}>
-            <Text style={{ fontSize: 13, color: t.textSec }}>{booking.notes}</Text>
+            <Text style={{ fontSize: 13, color: t.textSec }}>{live.notes}</Text>
           </View>
         ) : null}
       </View>
 
+      {live.status === 'pending' ? (
+        <Pressable
+          onPress={() => void openPay()}
+          style={[styles.payCta, { backgroundColor: t.accent, marginTop: 16 }]}
+        >
+          <Text style={{ color: '#000', fontWeight: '800', fontSize: 15 }}>Pay now</Text>
+        </Pressable>
+      ) : null}
+
       <View style={[styles.card, { backgroundColor: t.bgCard, borderColor: t.border, marginTop: 16 }]}>
         <Text style={[styles.section, { color: t.textMuted }]}>Venue Contact</Text>
-        {booking.venuePhone ? (
+        {live.venuePhone ? (
           <Pressable
-            onPress={() => void Linking.openURL(`tel:${booking.venuePhone}`)}
+            onPress={() => void Linking.openURL(`tel:${live.venuePhone}`)}
             style={styles.contactRow}
           >
             <PhoneIcon color={t.accent} />
-            <Text style={{ fontSize: 14, color: t.text }}>{booking.venuePhone}</Text>
+            <Text style={{ fontSize: 14, color: t.text }}>{live.venuePhone}</Text>
           </Pressable>
         ) : null}
-        {booking.venueAddress ? (
+        {live.venueAddress ? (
           <View style={styles.contactRow}>
             <PinIcon color={t.accent} />
-            <Text style={{ fontSize: 14, color: t.text, flex: 1 }}>{booking.venueAddress}</Text>
+            <Text style={{ fontSize: 14, color: t.text, flex: 1 }}>{live.venueAddress}</Text>
           </View>
         ) : null}
       </View>
 
       {canEdit ? (
         <Pressable
-          onPress={() => onEditRequest!(booking)}
+          onPress={() => onEditRequest!(live)}
           style={[styles.editFull, { backgroundColor: t.accentBg, borderColor: t.accent, marginTop: 16 }]}
         >
           <Text style={{ color: t.accent, fontWeight: '800', fontSize: 14 }}>Edit request</Text>
@@ -173,10 +228,41 @@ export default function BookingDetailScreen({ booking, onCancel, onEditRequest, 
           style={[styles.cancelFull, { borderColor: t.red, marginTop: canEdit ? 10 : 16 }]}
         >
           <Text style={{ color: t.red, fontWeight: '700', fontSize: 14 }}>
-            {booking.status === 'pending' ? 'Cancel Request' : 'Cancel Booking'}
+            {live.status === 'pending' ? 'Cancel request' : 'Cancel booking'}
           </Text>
         </Pressable>
       ) : null}
+
+      <Modal visible={payOpen} animationType="slide" onRequestClose={() => setPayOpen(false)}>
+        <View style={[styles.modalRoot, { backgroundColor: t.bg, paddingTop: insets.top + 8 }]}>
+          <View style={[styles.modalBar, { borderBottomColor: t.border }]}>
+            <Pressable onPress={() => setPayOpen(false)} style={{ padding: 12 }}>
+              <Text style={{ color: t.accent, fontWeight: '700' }}>Close</Text>
+            </Pressable>
+            <Text style={{ flex: 1, textAlign: 'center', color: t.text, fontWeight: '800' }}>Pay</Text>
+            <View style={{ width: 56 }} />
+          </View>
+          {payLoading ? (
+            <ActivityIndicator size="large" color={t.accent} style={{ marginTop: 40 }} />
+          ) : payVenue ? (
+            <View style={{ flex: 1, paddingHorizontal: 16, paddingTop: 16, paddingBottom: insets.bottom + 12 }}>
+              <VietQrPaymentPanel
+                booking={live}
+                venue={payVenue}
+                userId={userId}
+                t={t}
+                showSuccessHeader={false}
+                onBookingUpdated={(b) => {
+                  setLive(b);
+                  onBookingRefresh?.();
+                }}
+              />
+            </View>
+          ) : (
+            <Text style={{ color: t.textSec, textAlign: 'center', marginTop: 32 }}>Could not load venue.</Text>
+          )}
+        </View>
+      </Modal>
     </View>
   );
 }
@@ -221,5 +307,18 @@ const styles = StyleSheet.create({
     borderRadius: 14,
     borderWidth: 1,
     alignItems: 'center',
+  },
+  payCta: {
+    width: '100%',
+    paddingVertical: 16,
+    borderRadius: 14,
+    alignItems: 'center',
+  },
+  modalRoot: { flex: 1 },
+  modalBar: {
+    flexDirection: 'row',
+    alignItems: 'center',
+    borderBottomWidth: 1,
+    paddingHorizontal: 4,
   },
 });

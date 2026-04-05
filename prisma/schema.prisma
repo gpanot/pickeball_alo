@@ -41,14 +41,17 @@ model Venue {
 }
 
 model VenuePayment {
-  id            String  @id @default(cuid())
-  venueId       String
-  venue         Venue   @relation(fields: [venueId], references: [id], onDelete: Cascade)
-  bank          String
-  accountName   String
-  accountNumber String
-  qrImageUrl    String?
-  sortOrder     Int     @default(0)
+  id                    String  @id @default(cuid())
+  venueId               String
+  venue                 Venue   @relation(fields: [venueId], references: [id], onDelete: Cascade)
+  bank                  String
+  accountName           String
+  accountNumber         String
+  qrImageUrl            String?
+  /// 6-digit BIN for VietQR (img.vietqr.io)
+  bankBin               String?
+  isDefaultForDynamicQr Boolean @default(false)
+  sortOrder             Int     @default(0)
 
   @@index([venueId])
 }
@@ -123,11 +126,17 @@ model Booking {
   totalPrice   Int
   notes        String?
   adminNote    String?
-  reviewedAt   DateTime?
-  reviewedBy   String?
-  status       String   @default("pending")
-  createdAt    DateTime @default(now())
-  updatedAt    DateTime @updatedAt
+  reviewedAt           DateTime?
+  reviewedBy           String?
+  status               String    @default("pending")
+  paymentSubmittedAt   DateTime?
+  paymentConfirmedAt   DateTime?
+  paymentNote          String?
+  paymentProofUrl      String?
+  /// Auto-cancel deadline: booking is cancelled if proof is not uploaded by this time.
+  paymentDeadline      DateTime?
+  createdAt            DateTime  @default(now())
+  updatedAt            DateTime  @updatedAt
 
   @@index([userId])
   @@index([venueId])

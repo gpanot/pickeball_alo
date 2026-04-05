@@ -129,6 +129,8 @@ async function main() {
             accountName: String(p.accountName || '').slice(0, 200),
             accountNumber: String(p.accountNumber || '').slice(0, 60),
             qrImageUrl: p.qr ? String(p.qr).slice(0, 500) : null,
+            bankBin: pi === 0 ? '970422' : null,
+            isDefaultForDynamicQr: pi === 0,
             sortOrder: pi,
           }))
         : [];

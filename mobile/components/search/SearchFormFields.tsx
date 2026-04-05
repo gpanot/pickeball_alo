@@ -27,6 +27,8 @@ export interface SearchFormFieldsProps {
   onDurationChange: (i: number) => void;
   onTimeChange: (i: number) => void;
   t: ThemeTokens;
+  /** When the location field is rendered elsewhere (e.g. MapsExploreSearch on Book home). */
+  hideLocationSearch?: boolean;
 }
 
 export default function SearchFormFields({
@@ -39,6 +41,7 @@ export default function SearchFormFields({
   onDurationChange,
   onTimeChange,
   t,
+  hideLocationSearch = false,
 }: SearchFormFieldsProps) {
   const dates = getNextDays(7);
   const timeScrollRef = useRef<ScrollView>(null);
@@ -62,26 +65,28 @@ export default function SearchFormFields({
 
   return (
     <View>
-      <View
-        style={[
-          styles.searchBox,
-          { backgroundColor: t.bgCard, borderColor: t.border },
-        ]}
-      >
-        <PinIcon color={t.accent} />
-        <TextInput
-          style={[styles.input, { color: t.text }]}
-          placeholder="Search area or venue name..."
-          placeholderTextColor={t.textMuted}
-          value={searchQuery}
-          onChangeText={onSearchQueryChange}
-        />
-        {!!searchQuery && (
-          <Pressable onPress={() => onSearchQueryChange('')} hitSlop={8}>
-            <CloseIcon color={t.textMuted} />
-          </Pressable>
-        )}
-      </View>
+      {!hideLocationSearch && (
+        <View
+          style={[
+            styles.searchBox,
+            { backgroundColor: t.bgCard, borderColor: t.border },
+          ]}
+        >
+          <PinIcon color={t.accent} />
+          <TextInput
+            style={[styles.input, { color: t.text }]}
+            placeholder="Search area or venue name..."
+            placeholderTextColor={t.textMuted}
+            value={searchQuery}
+            onChangeText={onSearchQueryChange}
+          />
+          {!!searchQuery && (
+            <Pressable onPress={() => onSearchQueryChange('')} hitSlop={8}>
+              <CloseIcon color={t.textMuted} />
+            </Pressable>
+          )}
+        </View>
+      )}
 
       <SectionLabel label="When" t={t} />
       <ScrollView horizontal showsHorizontalScrollIndicator={false} contentContainerStyle={styles.rowGap}>

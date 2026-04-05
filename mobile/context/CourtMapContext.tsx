@@ -385,14 +385,18 @@ function useCourtMapInner() {
     }
   }, [userId]);
 
-  const handleCancelBooking = useCallback(async (id: string) => {
-    try {
-      const updated = await cancelBooking(id);
-      setBookings((prev) => prev.map((b) => (b.id === id ? updated : b)));
-    } catch (err) {
-      console.error('Failed to cancel booking:', err);
-    }
-  }, []);
+  const handleCancelBooking = useCallback(
+    async (id: string) => {
+      if (!userId) return;
+      try {
+        const updated = await cancelBooking(id, userId);
+        setBookings((prev) => prev.map((b) => (b.id === id ? updated : b)));
+      } catch (err) {
+        console.error('Failed to cancel booking:', err);
+      }
+    },
+    [userId],
+  );
 
   const handleSaveProfile = useCallback(
     (name: string, phone: string) => {

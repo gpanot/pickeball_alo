@@ -10,14 +10,24 @@ import type { BookingResult } from '@/lib/types';
 interface MyBookingsScreenProps {
   bookings: BookingResult[];
   loading: boolean;
+  userId: string;
   onBack: () => void;
   onCancel: (id: string) => void;
+  onRefreshBookings?: () => void;
   t: ThemeTokens;
 }
 
 type TabKey = 'upcoming' | 'past' | 'all';
 
-export default function MyBookingsScreen({ bookings, loading, onBack, onCancel, t }: MyBookingsScreenProps) {
+export default function MyBookingsScreen({
+  bookings,
+  loading,
+  userId,
+  onBack,
+  onCancel,
+  onRefreshBookings,
+  t,
+}: MyBookingsScreenProps) {
   const [tab, setTab] = useState<TabKey>('upcoming');
   const [selectedBooking, setSelectedBooking] = useState<BookingResult | null>(null);
 
@@ -36,8 +46,10 @@ export default function MyBookingsScreen({ bookings, loading, onBack, onCancel, 
     return (
       <BookingDetail
         booking={current}
+        userId={userId}
         onBack={() => setSelectedBooking(null)}
         onCancel={onCancel}
+        onRefreshBookings={onRefreshBookings}
         t={t}
       />
     );

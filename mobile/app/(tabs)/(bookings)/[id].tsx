@@ -10,7 +10,7 @@ export default function BookingDetailRoute() {
   const { id } = useLocalSearchParams<{ id: string }>();
   const router = useRouter();
   const ctx = useCourtMap();
-  const { t, bookings, handleCancelBooking, beginEditBooking } = ctx;
+  const { t, bookings, userId, loadBookings, handleCancelBooking, beginEditBooking } = ctx;
 
   const booking = useMemo(() => bookings.find((b) => b.id === id), [bookings, id]);
 
@@ -36,8 +36,10 @@ export default function BookingDetailRoute() {
       </ScreenTopBar>
       <BookingDetailScreen
         booking={booking}
+        userId={userId ?? ''}
         onCancel={handleCancelBooking}
         onEditRequest={(bk) => void beginEditBooking(bk)}
+        onBookingRefresh={() => void loadBookings()}
         t={t}
       />
     </View>

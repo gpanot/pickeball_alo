@@ -1,0 +1,23 @@
+/** Top Vietnamese banks for VietQR BIN (MVP static list). */
+export const VIETNAM_BANKS: { id: string; name: string; bin: string }[] = [
+  { id: 'vcb', name: 'Vietcombank', bin: '970436' },
+  { id: 'mb', name: 'MB Bank', bin: '970422' },
+  { id: 'tcb', name: 'Techcombank', bin: '970407' },
+  { id: 'vib', name: 'VietinBank', bin: '970415' },
+  { id: 'bidv', name: 'BIDV', bin: '970418' },
+  { id: 'acb', name: 'ACB', bin: '970416' },
+  { id: 'tpb', name: 'TPBank', bin: '970423' },
+  { id: 'stb', name: 'Sacombank', bin: '970403' },
+  { id: 'vpb', name: 'VPBank', bin: '970432' },
+  { id: 'hdb', name: 'HDBank', bin: '970437' },
+  { id: 'vab', name: 'VietABank', bin: '970405' },
+  { id: 'scb', name: 'SCB', bin: '970429' },
+  { id: 'ocb', name: 'OCB', bin: '970448' },
+  { id: 'shb', name: 'SHB', bin: '970443' },
+  { id: 'exb', name: 'Eximbank', bin: '970431' },
+  { id: 'msb', name: 'MSB', bin: '970426' },
+  { id: 'sgb', name: 'Saigonbank', bin: '970400' },
+  { id: 'pvb', name: 'PVcomBank', bin: '970412' },
+  { id: 'bab', name: 'BacABank', bin: '970409' },
+  { id: 'nab', name: 'NamABank', bin: '970428' },
+];

@@ -24,8 +24,21 @@ export async function PUT(
   if (typeof body.accountNumber === 'string') data.accountNumber = body.accountNumber.slice(0, 60);
   if (body.qrImageUrl === null || body.qrImageUrl === undefined) data.qrImageUrl = null;
   else if (typeof body.qrImageUrl === 'string') data.qrImageUrl = body.qrImageUrl.slice(0, 500);
+  if (body.bankBin === null || body.bankBin === undefined || body.bankBin === '') data.bankBin = null;
+  else if (typeof body.bankBin === 'string' && /^\d{6}$/.test(body.bankBin.trim())) {
+    data.bankBin = body.bankBin.trim();
+  }
+  if (typeof body.isDefaultForDynamicQr === 'boolean') data.isDefaultForDynamicQr = body.isDefaultForDynamicQr;
 
-  const updated = await prisma.venuePayment.update({ where: { id }, data });
+  const updated = await prisma.$transaction(async (tx) => {
+    if (data.isDefaultForDynamicQr === true) {
+      await tx.venuePayment.updateMany({
+        where: { venueId: venueId! },
+        data: { isDefaultForDynamicQr: false },
+      });
+    }
+    return tx.venuePayment.update({ where: { id }, data });
+  });
   return NextResponse.json(updated);
 }
 

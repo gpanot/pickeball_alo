@@ -65,13 +65,30 @@ export async function getBookings(userId: string): Promise<BookingResult[]> {
   return res.json();
 }
 
-export async function cancelBooking(id: string): Promise<BookingResult> {
+export async function cancelBooking(id: string, userId: string): Promise<BookingResult> {
   const res = await fetch(`${BASE}/api/bookings/${encodeURIComponent(id)}`, {
     method: 'PATCH',
     headers: { 'Content-Type': 'application/json' },
-    body: JSON.stringify({ status: 'canceled' }),
+    body: JSON.stringify({ status: 'canceled', userId }),
   });
   if (!res.ok) throw new Error('Failed to cancel booking');
+  return res.json();
+}
+
+export async function markPaymentSubmitted(
+  id: string,
+  userId: string,
+  paymentProofUrl: string,
+): Promise<BookingResult> {
+  const res = await fetch(`${BASE}/api/bookings/${encodeURIComponent(id)}`, {
+    method: 'PATCH',
+    headers: { 'Content-Type': 'application/json' },
+    body: JSON.stringify({ status: 'payment_submitted', userId, paymentProofUrl }),
+  });
+  if (!res.ok) {
+    const err = await res.json().catch(() => ({}));
+    throw new Error(typeof err.error === 'string' ? err.error : 'Failed to confirm payment');
+  }
   return res.json();
 }
 

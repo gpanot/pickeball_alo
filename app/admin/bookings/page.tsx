@@ -5,13 +5,15 @@ import { darkTheme } from '@/lib/theme';
 import { readAdminSession } from '@/lib/admin-storage';
 import { adminAuthHeaders } from '@/lib/admin-api';
 import type { BookingResult, BookingStatus } from '@/lib/types';
+
+type ProofModalState = { url: string; orderRef: string } | null;
 import { formatBookingOrderRef, formatVndFull } from '@/lib/formatters';
 
 const t = darkTheme;
 
 const STATUS_COLORS: Record<BookingStatus, string> = {
   pending: t.orange,
-  booked: t.green,
+  payment_submitted: '#E8C547',
   paid: t.blue,
   canceled: t.red,
 };
@@ -25,6 +27,7 @@ export default function AdminBookingsPage() {
   const [busyId, setBusyId] = useState<string | null>(null);
   const [rejectId, setRejectId] = useState<string | null>(null);
   const [rejectNote, setRejectNote] = useState('');
+  const [proofModal, setProofModal] = useState<ProofModalState>(null);
 
   const load = useCallback(() => {
     if (!session) return;
@@ -81,7 +84,7 @@ export default function AdminBookingsPage() {
 
       <div style={{ display: 'flex', flexDirection: 'column', gap: 10, marginBottom: 16 }}>
         <div style={{ display: 'flex', flexWrap: 'wrap', gap: 8 }}>
-          {(['all', 'pending', 'booked', 'paid', 'canceled'] as const).map((s) => (
+          {(['all', 'pending', 'payment_submitted', 'paid', 'canceled'] as const).map((s) => (
             <button
               key={s}
               type="button"
@@ -132,7 +135,7 @@ export default function AdminBookingsPage() {
         </button>
         <input
           type="search"
-          placeholder="Search name or phone"
+          placeholder="Search name, phone, or order ref (CM-…)"
           value={q}
           onChange={(e) => setQ(e.target.value)}
           style={{
@@ -186,6 +189,9 @@ export default function AdminBookingsPage() {
               {b.adminNote ? (
                 <div style={{ fontSize: 13, color: t.orange, marginTop: 4 }}>Admin: {b.adminNote}</div>
               ) : null}
+              {b.paymentNote ? (
+                <div style={{ fontSize: 13, color: t.orange, marginTop: 4 }}>Payment: {b.paymentNote}</div>
+              ) : null}
               <div style={{ fontSize: 12, color: t.textMuted, marginTop: 6 }}>
                 {new Date(b.createdAt).toLocaleString()}
               </div>
@@ -230,14 +236,6 @@ export default function AdminBookingsPage() {
                       <button
                         type="button"
                         disabled={busyId === b.id}
-                        onClick={() => patch(b.id, { status: 'booked' })}
-                        style={btnOk}
-                      >
-                        Approve
-                      </button>
-                      <button
-                        type="button"
-                        disabled={busyId === b.id}
                         onClick={() => setRejectId(b.id)}
                         style={btnReject}
                       >
@@ -248,14 +246,39 @@ export default function AdminBookingsPage() {
                 </div>
               )}
 
-              {b.status === 'booked' && (
+              {b.paymentProofUrl && (b.status === 'payment_submitted' || b.status === 'paid') ? (
+                <button
+                  type="button"
+                  onClick={() => setProofModal({ url: b.paymentProofUrl!, orderRef: formatBookingOrderRef(b.orderId) })}
+                  style={{
+                    marginTop: 10,
+                    padding: 0,
+                    border: `1px solid ${t.border}`,
+                    borderRadius: 8,
+                    background: 'transparent',
+                    cursor: 'pointer',
+                    display: 'flex',
+                    alignItems: 'center',
+                    gap: 8,
+                  }}
+                >
+                  <img
+                    src={b.paymentProofUrl}
+                    alt="Proof"
+                    style={{ width: 56, height: 56, objectFit: 'cover', borderRadius: 7 }}
+                  />
+                  <span style={{ fontSize: 12, color: t.blue, fontWeight: 600, paddingRight: 10 }}>View proof</span>
+                </button>
+              ) : null}
+
+              {b.status === 'payment_submitted' && (
                 <div style={{ marginTop: 12 }}>
                   {rejectId === b.id ? (
                     <>
                       <textarea
                         value={rejectNote}
                         onChange={(e) => setRejectNote(e.target.value)}
-                        placeholder="Cancel note (optional)"
+                        placeholder="Note if not received (optional)"
                         rows={2}
                         style={{
                           width: '100%',
@@ -273,10 +296,10 @@ export default function AdminBookingsPage() {
                         <button
                           type="button"
                           disabled={busyId === b.id}
-                          onClick={() => patch(b.id, { status: 'canceled', adminNote: rejectNote })}
-                          style={btnReject}
+                          onClick={() => patch(b.id, { status: 'pending', paymentNote: rejectNote })}
+                          style={btnGhost}
                         >
-                          Confirm cancel
+                          Confirm not received
                         </button>
                         <button type="button" onClick={() => setRejectId(null)} style={btnGhost}>
                           Back
@@ -284,22 +307,22 @@ export default function AdminBookingsPage() {
                       </div>
                     </>
                   ) : (
-                    <div style={{ display: 'flex', gap: 8 }}>
+                    <div style={{ display: 'flex', gap: 8, flexWrap: 'wrap' }}>
                       <button
                         type="button"
                         disabled={busyId === b.id}
                         onClick={() => patch(b.id, { status: 'paid' })}
                         style={btnOk}
                       >
-                        Mark paid
+                        Confirm paid
                       </button>
                       <button
                         type="button"
                         disabled={busyId === b.id}
                         onClick={() => setRejectId(b.id)}
-                        style={btnReject}
+                        style={btnGhost}
                       >
-                        Cancel booking
+                        Not received
                       </button>
                     </div>
                   )}
@@ -309,6 +332,54 @@ export default function AdminBookingsPage() {
           );
         })}
       </div>
+
+      {proofModal ? (
+        <div
+          style={{
+            position: 'fixed',
+            inset: 0,
+            zIndex: 300,
+            background: 'rgba(0,0,0,0.8)',
+            display: 'flex',
+            alignItems: 'center',
+            justifyContent: 'center',
+            cursor: 'pointer',
+          }}
+          onClick={() => setProofModal(null)}
+        >
+          <div style={{ position: 'relative', maxWidth: '90vw', maxHeight: '90vh' }}>
+            <div style={{ color: '#fff', fontSize: 14, fontWeight: 700, textAlign: 'center', marginBottom: 8 }}>
+              Payment proof — {proofModal.orderRef}
+            </div>
+            <img
+              src={proofModal.url}
+              alt="Payment proof"
+              style={{ maxWidth: '90vw', maxHeight: '80vh', objectFit: 'contain', borderRadius: 8 }}
+            />
+            <button
+              type="button"
+              onClick={() => setProofModal(null)}
+              style={{
+                position: 'absolute',
+                top: -8,
+                right: -8,
+                width: 32,
+                height: 32,
+                borderRadius: 16,
+                border: 'none',
+                background: '#fff',
+                color: '#000',
+                fontWeight: 900,
+                fontSize: 18,
+                cursor: 'pointer',
+                fontFamily: 'inherit',
+              }}
+            >
+              ×
+            </button>
+          </div>
+        </div>
+      ) : null}
     </div>
   );
 }

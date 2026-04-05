@@ -10,6 +10,8 @@ interface MapsExploreSearchProps {
   t: ThemeTokens;
   onPickVenue: (v: VenueResult) => void;
   onPickPlace: (lat: number, lng: number) => void;
+  /** Keeps parent search state in sync while typing (e.g. Book tab + SEARCH COURTS). */
+  onQueryChange?: (q: string) => void;
 }
 
 function normalize(s: string): string {
@@ -21,6 +23,7 @@ export default function MapsExploreSearch({
   t,
   onPickVenue,
   onPickPlace,
+  onQueryChange,
 }: MapsExploreSearchProps) {
   const [query, setQuery] = useState('');
   const [open, setOpen] = useState(false);
@@ -68,23 +71,25 @@ export default function MapsExploreSearch({
   const handleVenuePick = useCallback(
     (v: VenueResult) => {
       onPickVenue(v);
-      setQuery('');
+      setQuery(v.name);
+      onQueryChange?.(v.name);
       setOpen(false);
       setPlaceHits([]);
       Keyboard.dismiss();
     },
-    [onPickVenue],
+    [onPickVenue, onQueryChange],
   );
 
   const handlePlacePick = useCallback(
-    (lat: number, lng: number) => {
+    (lat: number, lng: number, label: string) => {
       onPickPlace(lat, lng);
-      setQuery('');
+      setQuery(label);
+      onQueryChange?.(label);
       setOpen(false);
       setPlaceHits([]);
       Keyboard.dismiss();
     },
-    [onPickPlace],
+    [onPickPlace, onQueryChange],
   );
 
   const barBg = '#121212';
@@ -99,6 +104,7 @@ export default function MapsExploreSearch({
           onChangeText={(q) => {
             setQuery(q);
             setOpen(true);
+            onQueryChange?.(q);
           }}
           onFocus={() => setOpen(true)}
           placeholder="Search area or venue name..."
@@ -138,7 +144,7 @@ export default function MapsExploreSearch({
               {placeHits.map((p, i) => (
                 <Pressable
                   key={`${p.lat},${p.lng},${i}`}
-                  onPress={() => handlePlacePick(p.lat, p.lng)}
+                  onPress={() => handlePlacePick(p.lat, p.lng, p.displayName)}
                   style={[styles.row, { borderTopColor: t.border }]}
                 >
                   <Text style={{ color: t.text, fontSize: 14 }}>{p.displayName}</Text>
