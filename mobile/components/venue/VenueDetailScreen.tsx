@@ -25,10 +25,47 @@ import {
 } from '@/lib/formatters';
 import type { ThemeTokens } from '@/lib/theme';
 import type { VenueResult, BookingResult } from '@/lib/types';
-import { getVenue } from '@/lib/api';
+import { getVenue, getAloboSlots } from '@/lib/api';
 
 /** Visible map strip above the sheet: easy tap target, not tucked under status bar. */
 const MAP_TAP_DISMISS_EXTRA = 56;
+
+function AloboFreshnessBar({
+  fetchedAt,
+  refreshing,
+  onRefresh,
+  t,
+}: {
+  fetchedAt: string;
+  refreshing: boolean;
+  onRefresh: () => void;
+  t: ThemeTokens;
+}) {
+  const [, setTick] = useState(0);
+  useEffect(() => {
+    const id = setInterval(() => setTick((n) => n + 1), 10_000);
+    return () => clearInterval(id);
+  }, []);
+
+  const secsAgo = Math.max(0, Math.round((Date.now() - new Date(fetchedAt).getTime()) / 1000));
+  const label = secsAgo < 60 ? `${secsAgo}s ago` : `${Math.floor(secsAgo / 60)}m ago`;
+
+  return (
+    <View style={{ flexDirection: 'row', alignItems: 'center', paddingHorizontal: 20, paddingBottom: 6, gap: 6 }}>
+      <View style={{ width: 6, height: 6, borderRadius: 3, backgroundColor: t.green }} />
+      <Text style={{ fontSize: 11, color: t.textMuted, flex: 1 }}>
+        AloBo · {label}
+      </Text>
+      <Pressable onPress={onRefresh} disabled={refreshing} hitSlop={8}>
+        {refreshing ? (
+          <ActivityIndicator size="small" color={t.textMuted} />
+        ) : (
+          <Text style={{ fontSize: 11, fontWeight: '700', color: t.accent }}>Refresh</Text>
+        )}
+      </Pressable>
+    </View>
+  );
+}
 
 type SheetStep = 'detail' | 'booking' | 'confirmation';
 
@@ -177,6 +214,40 @@ export default function VenueDetailScreen({
       fetchingRef.current = false;
     };
   }, [visible, venueId, searchDate, venue, onVenueLoaded]);
+
+  // ── AloBo slot overlay ─────────────────────────────────────────────
+  const [aloboBookedKeys, setAloboBookedKeys] = useState<Set<string>>(new Set());
+  const [aloboFetchedAt, setAloboFetchedAt] = useState<string | null>(null);
+  const [aloboSupported, setAloboSupported] = useState(false);
+  const [aloboRefreshing, setAloboRefreshing] = useState(false);
+
+  const fetchAlobo = useCallback(
+    async (vid: string, date: string) => {
+      setAloboRefreshing(true);
+      try {
+        const result = await getAloboSlots(vid, date);
+        setAloboSupported(result.supported);
+        if (result.supported && result.bookedKeys) {
+          setAloboBookedKeys(new Set(result.bookedKeys));
+          setAloboFetchedAt(result.fetchedAt ?? new Date().toISOString());
+        } else {
+          setAloboBookedKeys(new Set());
+          setAloboFetchedAt(null);
+        }
+      } catch {
+        setAloboBookedKeys(new Set());
+        setAloboFetchedAt(null);
+      } finally {
+        setAloboRefreshing(false);
+      }
+    },
+    [],
+  );
+
+  useEffect(() => {
+    if (!visible || !venueId || !searchDate) return;
+    void fetchAlobo(venueId, searchDate);
+  }, [visible, venueId, searchDate, fetchAlobo]);
 
   useEffect(() => {
     if (!visible) {
@@ -473,9 +544,18 @@ export default function VenueDetailScreen({
                           onSelect={onAvailabilityDateChange}
                           t={t}
                         />
+                        {aloboSupported && aloboFetchedAt && (
+                          <AloboFreshnessBar
+                            fetchedAt={aloboFetchedAt}
+                            refreshing={aloboRefreshing}
+                            onRefresh={() => void fetchAlobo(venueId, searchDate)}
+                            t={t}
+                          />
+                        )}
                         <AvailabilityTab
                           courts={venue.courts}
                           selectedSlots={selectedSlots}
+                          aloboBookedKeys={aloboBookedKeys}
                           scrollAnchorTime={availabilityScrollAnchor ?? searchHourScrollAnchor}
                           prioritizeSelectedCourts={editBookingId != null}
                           onToggleSlot={onToggleSlot}

@@ -29,8 +29,10 @@ model Venue {
   googleUrl        String?
   adminPin         String?
   hasMemberPricing Boolean         @default(false)
-  /// When true, player UI shows 30-minute bookable slots at half the table’s hourly rate. When false, hourly slots at full hourly rate (DB still stores 30-minute rows).
+  /// When true, player UI shows 30-minute bookable slots at half the table's hourly rate. When false, hourly slots at full hourly rate (DB still stores 30-minute rows).
   use30MinSlots    Boolean         @default(true)
+  /// AloBo venue slug extracted from datlich.alobo.vn URL (e.g. "sport_65th_street_pickleball").
+  aloboSlug        String?
   courts           Court[]
   bookings         Booking[]
   pricingTables    PricingTable[]
@@ -91,6 +93,8 @@ model Court {
   name        String
   note        String?
   isAvailable Boolean    @default(true)
+  /// AloBo court identifier (e.g. "san_1", "san_2").
+  aloboId     String?
   slots       TimeSlot[]
 
   @@index([venueId])

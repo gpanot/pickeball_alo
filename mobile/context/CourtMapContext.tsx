@@ -29,6 +29,7 @@ import type { VenueResult, BookingResult, SortMode, ResultsFlowPillContext } fro
 import { darkTheme } from '@/lib/theme';
 import { useAsyncStorage } from '@/hooks/useAsyncStorage';
 import { mapDebug } from '@/lib/map-debug';
+import { syncVenues as syncVenueCache, getCachedVenue } from '@/lib/venue-cache';
 
 function generateId(): string {
   return 'u_' + Math.random().toString(36).slice(2) + Date.now().toString(36);
@@ -51,6 +52,7 @@ function useCourtMapInner() {
   const [sortBy, setSortBy] = useState<SortMode>('distance');
 
   const [venues, setVenues] = useState<VenueResult[]>([]);
+  const [exploreVenues, setExploreVenues] = useState<VenueResult[]>([]);
   const [catalogVenueCount, setCatalogVenueCount] = useState<number | null>(null);
   const [loading, setLoading] = useState(false);
 
@@ -93,6 +95,10 @@ function useCourtMapInner() {
     getVenueCatalogCount()
       .then(setCatalogVenueCount)
       .catch(() => setCatalogVenueCount(null));
+  }, []);
+
+  useEffect(() => {
+    syncVenueCache().catch(() => {});
   }, []);
 
   const hideTabBarForBookStack =
@@ -228,6 +234,7 @@ function useCourtMapInner() {
         });
         const t1 = typeof performance !== 'undefined' ? performance.now() : Date.now();
         setVenues(results);
+        setExploreVenues(results);
         mapDebug('venues_fetch_done', {
           reason: opts.reason,
           ms: Math.round(t1 - t0),
@@ -293,11 +300,20 @@ function useCourtMapInner() {
       const hour = START_HOUR_OPTIONS[selectedTime]?.hour ?? 9;
       const n = durationIndexToHalfHourCount(selectedDuration);
       const preset = useSearchPreset ? pickSlotsForSearch(v, hour, n) : new Set<string>();
-      setDetailVenue(v);
+
+      // Use the passed venue (may be from search results). If it has no courts/slots,
+      // try to fill from the local cache for an instant render while the full detail loads.
+      let initial = v;
+      if (!v.courts || v.courts.length === 0) {
+        getCachedVenue(v.id)
+          .then((cached) => {
+            if (cached && cached.courts.length > 0) setDetailVenue(cached as VenueResult);
+          })
+          .catch(() => {});
+      }
+      setDetailVenue(initial);
       setSelectedSlots(preset);
       setDetailJumpToConfirm(Boolean(opts?.jumpToConfirm && preset.size > 0));
-      // Defer navigation to the next microtask so the press handler returns immediately and
-      // React can commit detail state before the modal route mounts (snappier tap + correct initialVenue).
       queueMicrotask(() => {
         router.push(`/venue/${v.id}` as Href);
       });
@@ -466,18 +482,27 @@ function useCourtMapInner() {
     selectedDate < dates.length ? toLocalDateKey(dates[selectedDate]) : toLocalDateKey(new Date());
 
   const goMapsTab = useCallback(() => {
+    if (segments.includes('maps')) return;
+    setSearchQuery('');
+    setSelectedDate(0);
+    setSelectedDuration(0);
+    setSelectedTime(4);
+    setSortBy('distance');
+    lastExploreFetchKeyRef.current = '';
     router.replace('/(tabs)/maps');
     mapDebug('maps_tab_navigate', {
-      note: 'Keep explore venues; map screen geolocation skips duplicate API when center/radius unchanged.',
+      note: 'Reset search state; map screen starts fresh from explore.',
     });
-  }, [router]);
+  }, [router, segments]);
 
   const goSavedTab = useCallback(() => {
+    if (segments.includes('saved') && !savedViaResultsFlow) return;
     setSavedViaResultsFlow(false);
     router.replace('/(tabs)/saved');
-  }, [router]);
+  }, [router, segments, savedViaResultsFlow]);
 
   const goMyBookingsTab = useCallback(() => {
+    if (segments.includes('(bookings)')) return;
     if (userId && bookings.length === 0) {
       setBookingsLoading(true);
       getBookings(userId)
@@ -486,7 +511,7 @@ function useCourtMapInner() {
         .finally(() => setBookingsLoading(false));
     }
     router.replace('/(tabs)/(bookings)');
-  }, [userId, bookings.length, router]);
+  }, [userId, bookings.length, router, segments]);
 
   const openSavedFromResultsFlow = useCallback(() => {
     setSavedViaResultsFlow(true);
@@ -508,8 +533,10 @@ function useCourtMapInner() {
       : 'results';
 
   const goBookTab = useCallback(() => {
+    const onBookHome = segments.includes('(book)') && !segments.includes('results') && !segments.includes('results-map');
+    if (onBookHome) return;
     router.replace('/(tabs)/(book)');
-  }, [router]);
+  }, [router, segments]);
 
   const backFromResults = useCallback(() => {
     setSavedViaResultsFlow(false);
@@ -550,6 +577,7 @@ function useCourtMapInner() {
     sortBy,
     venues,
     setVenues,
+    exploreVenues,
     catalogVenueCount,
     loading,
     bookings,
@@ -604,7 +632,7 @@ function useCourtMapInner() {
     t, segments, hideTabBar, savedViaResultsFlow,
     savedSet, toggleSaved, userId, userName, userPhone,
     searchQuery, selectedDate, selectedDuration, selectedTime, sortBy,
-    venues, catalogVenueCount, loading, bookings, bookingsLoading,
+    venues, exploreVenues, catalogVenueCount, loading, bookings, bookingsLoading,
     detailVenue, detailJumpToConfirm, detailRefreshing, selectedSlots,
     savedSearchOpen, savedSearchApplying, savedBookVenue, searchDate,
     closeSavedBookSheet, openSavedBookSheet, refetchVenues,

@@ -1,5 +1,5 @@
 import React, { useCallback, useEffect, useMemo, useRef, useState } from 'react';
-import { View, Text, TextInput, Pressable, StyleSheet, Keyboard } from 'react-native';
+import { View, Text, TextInput, Pressable, StyleSheet, Keyboard, type TextInput as TI } from 'react-native';
 import { PinIcon } from '@/components/Icons';
 import type { ThemeTokens } from '@/lib/theme';
 import type { VenueResult } from '@/lib/types';
@@ -31,6 +31,7 @@ export default function MapsExploreSearch({
   const [placeHits, setPlaceHits] = useState<Array<{ displayName: string; lat: number; lng: number }>>(
     [],
   );
+  const inputRef = useRef<TI>(null);
   const debounceRef = useRef<ReturnType<typeof setTimeout> | null>(null);
   const requestIdRef = useRef(0);
 
@@ -96,9 +97,13 @@ export default function MapsExploreSearch({
 
   return (
     <View style={[styles.wrap, { backgroundColor: t.bg, borderBottomColor: t.border }]}>
-      <View style={[styles.bar, { backgroundColor: barBg, borderColor: t.border }]}>
+      <Pressable
+        style={[styles.bar, { backgroundColor: barBg, borderColor: t.border }]}
+        onPress={() => inputRef.current?.focus()}
+      >
         <PinIcon color={t.accent} size={20} />
         <TextInput
+          ref={inputRef}
           style={[styles.input, { color: t.text }]}
           value={query}
           onChangeText={(q) => {
@@ -111,7 +116,7 @@ export default function MapsExploreSearch({
           placeholderTextColor={t.textMuted}
           autoCorrect={false}
         />
-      </View>
+      </Pressable>
 
       {showPanel && (
         <View

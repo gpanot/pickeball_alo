@@ -69,9 +69,52 @@
 
 ---
 
+## Real-Time Booking Data (Discovery)
+
+- **Date**: 2026-04-06
+- **Method**: Navigated Flutter app via Puppeteer with accessibility mode enabled to capture network traffic on the "Visual Day Booking" page. Identified two key endpoints for live booking data. No login or account required — all data is publicly accessible as a guest.
+- **Endpoints discovered**:
+  - `GET /v2/user/branch/get_onetime_bookings?branchId={venueId}&startDate=YYYY-MM-DD&endDate=YYYY-MM-DD` — one-time (ad-hoc) booked slots
+  - `GET /v2/user/branch/get_schedule_bookings?branchId={venueId}&month=YYYY-MM` — recurring/scheduled bookings
+  - `GET /v2/user/branch/get_lock_yards/{venueId}` — owner-locked time slots (maintenance, events, etc.)
+- **Fields per booking** (`get_onetime_bookings`):
+  - `id`, `time`, `duration`, `type` (`groupOneTime`), `totalPrice`, `status`
+  - `services[]`: `serviceId` (court ID), `startTime`, `duration`, `price`, `amount`, `branchServiceType`
+- **Fields per schedule booking** (`get_schedule_bookings`):
+  - Same structure as one-time, with recurring schedule info
+- **Fields per locked slot** (`get_lock_yards`):
+  - `servicesId[]` (court IDs), `startTime`, `endTime`, `note`
+- **Script**: `scraper/query_bookings.js` — standalone query tool, no Puppeteer needed
+- **Usage**: `node scraper/query_bookings.js <venueId> [YYYY-MM-DD]`
+- **Sample output** (65th Street PICKLEBALL, 2026-04-06):
+  - 15 booked slots across 3 courts (Sân 1, Sân 2, Sân 3)
+  - 1 locked slot (all courts 06:00–07:00)
+  - 0 recurring schedule bookings
+
+---
+
 ## Technical Notes
 
 - **AES key**: `Al0b0@Doczy2025_5679_Secret_1107` (32-byte, UTF-8)
-- **`x-user-app` header**: SHA256 hash derived from timestamp, expires ~1 minute. Captured from Flutter app's own network calls and refreshed every 25s.
+- **`x-user-app` header**: `SHA256(MM/DD/YYYY, HH:MM@secret)` where the timestamp is in **UTC** (not local time). Expires ~1 minute. Can be generated locally without a browser — no Puppeteer needed.
+- **`x-user-app` secret**: `3486977e89f9031fb0ffe429b6dd252f` (extracted from obfuscated `main.dart.js` via XOR + prime-index permutation decoding)
+- **Critical bug fix (2026-04-06)**: The original `generateXUserApp()` used local time (`getHours()`, `getMonth()`), but the Flutter app and server both use **UTC** (`getUTCHours()`, `getUTCMonth()`). Fixed in both `scraper.js` and `query_bookings.js`.
 - **Rate limiting**: None observed. Batches of 5 venues at a time with no delays needed.
-- **Token refresh**: Page reload triggers Flutter to re-issue API calls, from which a fresh `x-user-app` is captured via CDP `Network.requestWillBeSent`.
+- **Authentication**: No login or user account required. All venue data, pricing, courts, and real-time bookings are accessible as a guest with only the `x-user-app` header.
+- **Navigation path to Visual Day Booking** (for reference): Home → venue page → "Đặt lịch" (Book) button → "Đặt lịch ngày trực quan" (Visual day booking) popup option.
+
+---
+
+## All Known Endpoints
+
+| Endpoint | Method | Params | Data |
+|---|---|---|---|
+| `/v2/user/branch/branches_first` | GET | — | First batch of venues |
+| `/v2/user/branch/branches` | GET | — | All venues |
+| `/v2/user/branch/get_branch/{venueId}` | GET | path | Venue details |
+| `/v2/user/branch/get_core_types/{venueId}` | GET | path | Pricing tables |
+| `/v2/user/branch/get_cores/{venueId}` | GET | path | Court list |
+| `/v2/user/branch/get_payments/{venueId}` | GET | path | Bank/payment info |
+| `/v2/user/branch/get_lock_yards/{venueId}` | GET | path | Locked time slots |
+| `/v2/user/branch/get_onetime_bookings` | GET | query: `branchId`, `startDate`, `endDate` | One-time booked slots |
+| `/v2/user/branch/get_schedule_bookings` | GET | query: `branchId`, `month` | Recurring bookings |

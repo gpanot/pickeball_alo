@@ -126,6 +126,30 @@ export async function updateBooking(
   return res.json();
 }
 
+// ── AloBo slot overlay ────────────────────────────────────────────────
+
+export interface AloboSlotsResult {
+  supported: boolean;
+  fetchedAt?: string;
+  bookedKeys?: string[];
+  error?: string;
+}
+
+export async function getAloboSlots(
+  venueId: string,
+  date: string,
+): Promise<AloboSlotsResult> {
+  try {
+    const res = await fetch(
+      `${BASE}/api/venues/${encodeURIComponent(venueId)}/alobo-slots?date=${encodeURIComponent(date)}`,
+    );
+    if (!res.ok) return { supported: false };
+    return res.json();
+  } catch {
+    return { supported: false };
+  }
+}
+
 export async function getProfile(phone: string): Promise<UserProfileData | null> {
   const res = await fetch(`${BASE}/api/profile/${encodeURIComponent(phone)}`);
   if (res.status === 404) return null;

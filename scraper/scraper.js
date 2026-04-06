@@ -28,7 +28,7 @@ const SITE     = 'https://datlich.alobo.vn';
 
 function generateXUserApp(date = new Date()) {
   const pad2 = n => String(n).padStart(2, '0');
-  const formatted = `${pad2(date.getMonth() + 1)}/${pad2(date.getDate())}/${date.getFullYear()}, ${pad2(date.getHours())}:${pad2(date.getMinutes())}`;
+  const formatted = `${pad2(date.getUTCMonth() + 1)}/${pad2(date.getUTCDate())}/${date.getUTCFullYear()}, ${pad2(date.getUTCHours())}:${pad2(date.getUTCMinutes())}`;
   const input = `${formatted}@${X_USER_SECRET}`;
   return crypto.createHash('sha256').update(Buffer.from(input, 'utf8')).digest('hex');
 }

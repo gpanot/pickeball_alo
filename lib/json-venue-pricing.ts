@@ -7,6 +7,7 @@ import type { PricingRow } from '@/lib/pricing';
 export interface CourtJsonRow {
   name: string;
   address: string;
+  url?: string;
   latitude: number | string;
   longitude: number | string;
   phone?: string;

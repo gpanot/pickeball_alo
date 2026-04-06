@@ -117,10 +117,19 @@ async function main() {
     const legacy = parseLegacyTables(v);
     const { tables: structTables, hasMember } = legacyTablesToStructured(legacy, mid);
 
+    const aloboSlug = v.url
+      ? v.url.replace(/.*\/dat-lich\//, '').replace(/\/$/, '') || null
+      : null;
+
     const courtNames =
       Array.isArray(v.courts) && v.courts.length > 0
-        ? v.courts.map((c) => ({ name: String(c.name).slice(0, 120), note: null, isAvailable: true }))
-        : [{ name: 'Court 1', note: null, isAvailable: true }];
+        ? v.courts.map((c) => ({
+            name: String(c.name).slice(0, 120),
+            note: null,
+            isAvailable: true,
+            aloboId: c.id ? String(c.id) : null,
+          }))
+        : [{ name: 'Court 1', note: null, isAvailable: true, aloboId: null }];
 
     const paymentRecords =
       Array.isArray(v.payments) && v.payments.length > 0
@@ -152,6 +161,7 @@ async function main() {
         images: [],
         adminPin: adminPinHash,
         hasMemberPricing: hasMember,
+        aloboSlug,
         courts: { create: courtNames },
         pricingTables: {
           create: structTables.map((t, i) => ({

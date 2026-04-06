@@ -16,6 +16,7 @@ export default function SearchRoute() {
   const {
     t,
     venues,
+    exploreVenues,
     searchQuery,
     setSearchQuery,
     selectedDate,
@@ -31,14 +32,14 @@ export default function SearchRoute() {
   } = ctx;
 
   useEffect(() => {
-    if (venues.length > 0) return;
+    if (exploreVenues.length > 0) return;
     void fetchExploreMapVenues({
       lat: 10.79,
       lng: 106.71,
       radiusKm: 25,
       reason: 'book-home-catalog',
     });
-  }, [venues.length, fetchExploreMapVenues]);
+  }, [exploreVenues.length, fetchExploreMapVenues]);
 
   const onPickVenueFromBook = useCallback(
     (v: VenueResult) => {
@@ -69,7 +70,7 @@ export default function SearchRoute() {
           t={t}
         />
         <MapsExploreSearch
-          venues={venues}
+          venues={exploreVenues}
           t={t}
           onPickVenue={onPickVenueFromBook}
           onPickPlace={onPickPlaceFromBook}
