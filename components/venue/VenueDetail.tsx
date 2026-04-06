@@ -256,10 +256,12 @@ export default function VenueDetail({
             WebkitOverflowScrolling: 'touch',
             overscrollBehavior: 'contain',
             touchAction: 'pan-y',
+            display: 'flex',
+            flexDirection: 'column',
           }}
         >
           {step === 'detail' && (
-            <>
+            <div style={{ flexShrink: 0 }}>
               {/* Photos */}
               <div style={{ display: 'flex', gap: 8, padding: '8px 16px 12px', overflowX: 'auto' }}>
                 {[0, 1, 2, 3].map((i) => (
@@ -389,10 +391,11 @@ export default function VenueDetail({
                 )}
                 {detailTab === 'info' && <InfoTab venue={displayVenue} t={t} />}
               </div>
-            </>
+            </div>
           )}
 
           {step === 'booking' && (
+            <div style={{ flexShrink: 0 }}>
             <BookingForm
               venue={displayVenue}
               selectedSlots={selArr}
@@ -405,10 +408,13 @@ export default function VenueDetail({
               onSuccess={handleBookingSuccess}
               t={t}
             />
+            </div>
           )}
 
           {step === 'confirmation' && completedBooking && (
-            <BookingConfirmation booking={completedBooking} venue={displayVenue} userId={userId} t={t} />
+            <div style={{ flex: 1, minHeight: 0, display: 'flex', flexDirection: 'column' }}>
+              <BookingConfirmation booking={completedBooking} venue={displayVenue} userId={userId} t={t} />
+            </div>
           )}
         </div>
 

@@ -316,6 +316,7 @@ export default function BookingDetail({
               display: 'flex',
               flexDirection: 'column',
               maxHeight: '100vh',
+              overflow: 'hidden',
             }}
           >
             <div
@@ -344,7 +345,16 @@ export default function BookingDetail({
               <div style={{ flex: 1, textAlign: 'center', fontWeight: 800, color: t.text }}>Pay</div>
               <div style={{ width: 72 }} />
             </div>
-            <div style={{ display: 'flex', flexDirection: 'column', flex: 1, minHeight: 0, padding: 16 }}>
+            <div
+              style={{
+                display: 'flex',
+                flexDirection: 'column',
+                flex: 1,
+                minHeight: 0,
+                overflow: 'hidden',
+                padding: 16,
+              }}
+            >
               {payLoading ? (
                 <div style={{ textAlign: 'center', padding: 40, color: t.textSec }}>Loading…</div>
               ) : payVenue ? (

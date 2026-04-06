@@ -22,7 +22,16 @@ export default function BookingConfirmation({
   useEffect(() => setLive(booking), [booking]);
 
   return (
-    <div style={{ padding: '12px 16px 0', display: 'flex', flexDirection: 'column', flex: 1, minHeight: 0 }}>
+    <div
+      style={{
+        padding: '12px 16px 0',
+        display: 'flex',
+        flexDirection: 'column',
+        flex: 1,
+        minHeight: 0,
+        overflow: 'hidden',
+      }}
+    >
       <VietQrPaymentWeb booking={live} venue={venue} userId={userId} t={t} onBookingUpdated={setLive} />
     </div>
   );

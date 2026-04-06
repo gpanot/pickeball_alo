@@ -536,11 +536,26 @@ export default function VietQrPaymentWeb({
       style={{
         display: 'flex',
         flexDirection: 'column',
-        minHeight: showSuccessHeader ? 'min(85vh, 720px)' : '100%',
-        maxHeight: showSuccessHeader ? '85vh' : undefined,
+        flex: 1,
+        minHeight: 0,
+        overflow: 'hidden',
+        maxHeight: showSuccessHeader ? 'min(85vh, 720px)' : '100%',
       }}
     >
-      <div style={{ flex: 1, minHeight: 0, overflowY: 'auto', paddingBottom: 8 }}>{main}</div>
+      <div
+        style={{
+          flex: 1,
+          minHeight: 0,
+          overflowY: 'auto',
+          overflowX: 'hidden',
+          WebkitOverflowScrolling: 'touch',
+          overscrollBehavior: 'contain',
+          touchAction: 'pan-y',
+          paddingBottom: 8,
+        }}
+      >
+        {main}
+      </div>
       <div
         style={{
           flexShrink: 0,
