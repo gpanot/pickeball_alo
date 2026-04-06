@@ -315,6 +315,10 @@ export default function CourtMapApp() {
     setUserPhone(p);
   }, [setUserName, setUserPhone]);
 
+  const handleMapGeoInitDone = useCallback(() => {
+    mapGeoInitDone.current = true;
+  }, []);
+
   const beginEditBooking = useCallback(async (booking: BookingResult) => {
     if (booking.status === 'paid' || booking.status === 'canceled') return;
     if (editNavigatingRef.current) return;
@@ -586,7 +590,7 @@ export default function CourtMapApp() {
             initialUserLoc={mapUserLoc}
             onUserLocResolved={setMapUserLoc}
             geoInitDone={mapGeoInitDone.current}
-            onGeoInitDone={useCallback(() => { mapGeoInitDone.current = true; }, [])}
+            onGeoInitDone={handleMapGeoInitDone}
           />
         )}
         {screen === 'saved' && (

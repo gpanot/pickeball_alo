@@ -117,7 +117,7 @@ export default function VietQrPaymentWeb({
   const slots = live.slots as BookingSlot[];
   const slotSummary = slots.map((s) => `${s.courtName} ${s.time}`).join(' · ');
 
-  const payments = venue.payments ?? [];
+  const payments = useMemo(() => venue.payments ?? [], [venue.payments]);
   const dynamicPay = useMemo(() => pickDynamicQrPayment(payments), [payments]);
   const manualPay = useMemo(() => pickPrimaryManualPayment(payments.length ? payments : undefined), [payments]);
 
