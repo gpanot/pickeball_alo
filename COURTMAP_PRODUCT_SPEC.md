@@ -1,9 +1,19 @@
 # CourtMap — Product Specification
 
-**Version:** 1.0  
+**Version:** 1.1  
 **Date:** April 6, 2026  
 **Product:** CourtMap (Pickleball Vietnam)  
 **Status:** Current State + Coach+Court Booking System (New Feature)
+
+---
+
+## Changelog
+
+### v1.1 — April 6, 2026
+- Added coach subscription model (trial / standard / pro)
+- Added payment flag mechanism (coach flags non-payment within 2hr window)
+- Upgraded rating system to 4 dimensions (On time / Friendly / Professional / Recommend)
+- Added dual court partnership model (coach self-selection + court owner invite flow)
 
 ---
 
@@ -11,11 +21,13 @@
 
 1. [Current App Overview](#1-current-app-overview)
 2. [Tech Stack](#2-tech-stack)
+2b. [React Native / Expo Development Standards](#2b-react-native--expo-development-standards)
 3. [Current Data Model](#3-current-data-model)
 4. [Current Booking Flow](#4-current-booking-flow)
 5. [New Feature: Coach + Court Booking System](#5-new-feature-coach--court-booking-system)
 6. [User Roles](#6-user-roles)
 7. [Credit System](#7-credit-system)
+7b. [Platform Revenue — Coach Subscriptions](#7b-platform-revenue--coach-subscriptions)
 8. [Payment Flow](#8-payment-flow)
 9. [UI/UX Design — Player (Mobile)](#9-uiux-design--player-mobile)
 10. [UI/UX Design — Coach (Mobile)](#10-uiux-design--coach-mobile)
@@ -66,6 +78,104 @@
 | **Payments** | VietQR (bank transfer + QR code + proof upload) |
 | **Hosting** | Vercel (web + API), Neon (PostgreSQL) |
 | **Data Source** | AloBo scraping (1,976 venues, 10,581 courts) with AES-CBC decryption |
+
+---
+
+## 2b. React Native / Expo Development Standards
+
+These rules apply to every new screen and component built for the coach marketplace feature. They exist to prevent web-to-RN patching debt.
+
+---
+
+### Component-first rule
+
+Before writing any screen, identify the primitive components it needs and build or confirm those exist first.
+
+Every screen must be composed of named, reusable components. No inline anonymous JSX blocks longer than ~20 lines inside a screen file. If a UI element appears on more than one screen, it lives in `components/` before the second screen is built.
+
+**Required components to create before Phase 2 begins** (added to Phase 1 checklist):
+
+| Component | Used on |
+|-----------|---------|
+| `CoachCard` | CoachListScreen, search results |
+| `SessionCard` | CoachTodayScreen, BookingsScreen |
+| `CreditBadge` | CoachProfileScreen, MyCreditsScreen, SessionDetailScreen |
+| `RatingBar` | 4-dimension rating display: CoachProfileScreen, RateSessionScreen |
+| `StarRating` | Interactive 1–5 star input: RateSessionScreen |
+| `VietQRBlock` | QR image + bank details + copy buttons + "I have paid" button: SessionPaymentScreen, BuyCreditPackScreen |
+| `TimeSlotGrid` | Reuse from existing court booking flow |
+| `DatePicker` | Reuse from existing court booking flow |
+| `SectionHeader` | Label + optional right action link |
+| `EmptyState` | Illustration placeholder + title + subtitle + optional CTA button |
+| `BottomSheet` | Wrapper with handle bar, used for all modal sheets (cancel, flag payment, group size) |
+| `StatusChip` | Confirmed / pending / cancelled / verifying with colour variants |
+
+---
+
+### Platform rules — no web primitives in RN files
+
+Never use in `.tsx` files under `app/` or `components/` targeting mobile:
+
+- No `<div>`, `<span>`, `<p>`, `<a>`, `<img>`, `<input>`, `<button>`
+- No `onClick` — use `onPress`
+- No CSS classes or `className` — use `StyleSheet.create()` or a theme utility
+- No `position: fixed` — use `position: absolute` with awareness of safe area
+- No `vh` / `vw` units — use `Dimensions.get('window')` or Flexbox
+- No hover states — RN has no hover, use pressed states via `Pressable`
+- No `overflow: scroll` on a plain `View` — use `ScrollView` or `FlatList` explicitly
+
+---
+
+### Shared code between web and mobile
+
+If a file is shared between Next.js (web) and Expo (mobile), it must contain zero platform-specific imports.
+
+**Safe to share:** types, constants, API call functions (using `fetch`), Prisma types, utility functions, validation logic.
+
+**Not safe to share:** anything that imports from `react-native`, `expo-*`, `next/*`, or uses `document` / `window`.
+
+Use platform extensions when behaviour genuinely differs:
+
+```
+component.native.tsx  → RN version
+component.web.tsx     → web version
+component.tsx         → shared fallback
+```
+
+---
+
+### Navigation — expo-router conventions
+
+- Every new screen is a file under `app/(tabs)/` or `app/(stack)/`
+- No programmatic navigation using ref hacks — use `router.push()`, `router.replace()`, `router.back()`
+- Tab screens use layout files — do not nest tab logic inside screen components
+- Modal/sheet screens use `presentation: 'transparentModal'` in the layout, not custom overlay state
+
+---
+
+### Safe area
+
+Every screen root must be wrapped in `SafeAreaView` from `react-native-safe-area-context`, not the deprecated version from `react-native`.
+
+Bottom tab bar and sticky bottom CTAs must respect bottom safe area inset — use `useSafeAreaInsets()` and add the inset value to the container's `paddingBottom`. Do not hardcode `34px`.
+
+---
+
+### FlatList over ScrollView for lists
+
+Any list that could exceed 10 items must use `FlatList` (or `FlashList` from `@shopify/flash-list` for performance), not `ScrollView` with mapped children.
+
+Applies to: `CoachListScreen`, `MyCreditsScreen`, `CoachPlayersScreen`, `BookingsScreen` session lists.
+
+---
+
+### Theme tokens — no hardcoded colours or sizes
+
+All colours, font sizes, spacing, and border radii must reference the theme object from `lib/theme.ts` (shared) or `mobile/lib/theme.ts` (mobile-specific).
+
+- No hardcoded hex values in component files.
+- No hardcoded pixel values for spacing — use `theme.spacing`.
+- If a new token is needed, add it to `theme.ts` first, then use it. Never introduce a one-off magic number in a component file.
 
 ---
 
@@ -132,10 +242,10 @@ Transform CourtMap from a court-only booking platform into a **coach + court mar
 
 ### Key Principles
 
-1. **Coach pre-selects courts** — Coaches define which venues/courts they operate at. Players pick a coach and a time; the court is part of the package.
+1. **Coach + court partnership** — Two ways a coach is linked to a venue: (a) Self-selection: Coach searches venues from the 1,976 catalog by radius from their base location and requests to add a court partnership. (b) Court owner invite: Court owner proactively invites a coach to their venue from the admin panel. Coach receives a notification and accepts or declines. Both methods create a CoachCourtLink record. Either party can deactivate the link.
 2. **Credit system** — Players can buy credit packs with specific coaches or pay per session. Cancellations refund a credit (same coach only).
 3. **Coach handles court payment** — The player pays the full amount (coach fee + court fee) to the coach via VietQR. The coach is responsible for paying the court owner separately.
-4. **Group sessions** — Coaches can offer both 1-on-1 and group sessions (2–4 players sharing the cost).
+4. **Group sessions** — Coaches can offer both 1-on-1 and group sessions (2–4 players). The primary player pays the full amount (coach + court) in one transaction via VietQR or credit. Friends reimburse the primary player outside the app — no in-app cost splitting.
 5. **Three user roles** — Player (mobile), Coach (mobile), Court Owner (web admin extension).
 
 ---
@@ -153,7 +263,7 @@ The existing mobile user, extended with coach discovery and booking capabilities
 | Book session | Select coach → pick date/time → choose session type (1-on-1 or group) → pay |
 | Credit management | Buy credit packs, view balance per coach, use credits to book |
 | Cancel session | Get +1 credit back (same coach only), subject to cancellation policy |
-| Rate & review | Leave rating + text review after a completed session |
+| Rate & review | Leave a 4-dimension rating after each completed session. Dimensions: On time (did coach start on schedule?) / Friendly (was coach approachable?) / Professional (was coaching quality high?) / Recommend (would you recommend this coach?). Each dimension rated 1–5 stars independently. Optional written review (150 chars). |
 | Book courts (existing) | Continue using current court-only booking flow |
 
 ### 6.2 Coach (Mobile — Expo App)
@@ -165,7 +275,7 @@ A new user type with their own mobile experience (same Expo app, role-based navi
 | Profile setup | Name, photo, bio, certifications, specialties, pricing tiers |
 | Court partnerships | Select which venues/courts they coach at (from the 1,976 venue catalog) |
 | Availability | Set weekly recurring schedule + date-specific overrides |
-| Session management | View upcoming/past sessions, confirm/cancel, mark complete |
+| Session management | View upcoming/past sessions, cancel, mark complete. Bookings are auto-approved — no manual accept/decline for better UX. |
 | Earnings dashboard | Track income, sessions count, credit pack sales |
 | Player management | See player list, session history, credits outstanding |
 | Receive payments | VietQR payment from players for (coach fee + court fee) |
@@ -179,6 +289,8 @@ Extends the existing `/admin` panel with a court-owner role.
 | Venue dashboard | See all bookings (direct player + coach-mediated) on their courts |
 | Court management | Manage courts, availability, pricing (existing admin features) |
 | Coach directory | See which coaches operate at their venue |
+| Invite coaches | Send an invite to a coach by phone number or coach profile link. Coach receives push notification and can accept or decline from their mobile app. |
+| Manage partnerships | See all active coach links, deactivate a coach from their venue if needed. |
 | Revenue reports | Track occupancy, revenue from direct bookings vs. coach sessions |
 | Slot blocking | Block slots for maintenance, events, or private use |
 
@@ -232,6 +344,32 @@ Coaches set their own pricing tiers. The table above is an example — each coac
 
 ---
 
+## 7b. Platform Revenue — Coach Subscriptions
+
+CourtMap earns from coaches via a flat monthly subscription. No per-session commission. No payment processing involvement.
+
+### Plans
+
+| Plan | Price | Features |
+|------|-------|----------|
+| **Trial** | Free for 30 days | All features. Limited to 10 bookings. Auto-prompts to upgrade after trial ends. |
+| **Standard** | 199,000 VND/month | Unlimited bookings. Full profile. Calendar. Push + Zalo notifications. Basic earnings view. |
+| **Pro** | 299,000 VND/month | Everything in Standard + priority placement in search results + Top Coach badge eligibility (requires 4.8+ rating, 50+ sessions, <3% cancellation rate) + detailed analytics. |
+
+### Billing
+
+Coach pays monthly via VietQR — the same payment method they already use for everything.
+
+### Lapsed Subscription
+
+If a subscription lapses:
+- Coach profile goes **inactive** — no longer visible to players in search results.
+- No new bookings can be made.
+- Existing confirmed bookings are **honoured** until their session date.
+- Coach can re-activate at any time by paying for the next month.
+
+---
+
 ## 8. Payment Flow
 
 ### Coach Session Booking
@@ -263,6 +401,22 @@ Coaches set their own pricing tiers. The table above is an example — each coac
      │                               │                                │
 ```
 
+### Payment Not Received
+
+If a player taps "I've paid" but the coach checks their bank and the transfer is not there, the coach can flag the booking within 2 hours of the "I've paid" tap.
+
+**Flow:**
+1. Coach sees session card with status "Payment submitted"
+2. Coach taps "Payment not received" (visible for 2hrs only)
+3. Confirmation sheet explains: booking will be cancelled, player's credit is not issued (if credit payment), player is notified to retry or cancel
+4. Coach confirms → booking status reverts to `pending`
+5. Player receives push: "Coach [Name] could not confirm your payment. Please pay again or cancel your booking."
+
+**Rules:**
+- Coach can only flag a maximum of **3 times total** across all bookings (prevents abuse). The lifetime count lives on the `Coach` model (`paymentFlagCount`), not on individual sessions.
+- When a flag is submitted, the API must **atomically** (single transaction): (1) check `Coach.paymentFlagCount < 3`, (2) set `CoachSession.paymentFlaggedAt = now()`, (3) increment `Coach.paymentFlagCount += 1`, (4) revert session `paymentStatus` to `pending`.
+- After 2 hours from the player's "I've paid" tap, the flag option disappears — session is assumed confirmed.
+
 ### Payment Breakdown Display (Player View)
 
 ```
@@ -286,16 +440,19 @@ Coaches set their own pricing tiers. The table above is an example — each coac
 └─────────────────────────────────────┘
 ```
 
-For **group sessions**, the court fee is split among participants:
+For **group sessions**, the primary player pays the full amount. Friends reimburse outside the app:
 
 ```
 ┌─────────────────────────────────────┐
-│      Group Session (3 players)      │
+│   Group Session (you + 2 friends)   │
 ├─────────────────────────────────────┤
-│ Coach fee (per person)  200,000     │
-│ Court fee (split 3 ways) 50,000    │
+│ Coach fee (full)       600,000      │
+│ Court fee (full)       150,000      │
 │ ─────────────────────────────       │
-│ Your total             250,000 VND  │
+│ Total you pay          750,000 VND  │
+├─────────────────────────────────────┤
+│ 💡 Suggested split: 250,000 / person│
+│    Collect from friends outside app │
 └─────────────────────────────────────┘
 ```
 
@@ -378,8 +535,13 @@ The bottom tab bar gains a **Coach** tab. The existing tabs remain.
 │         └──────────────┘             │
 │                                      │
 │   Coach Nguyen Van A                 │
-│   ⭐ 4.8 (32 reviews)               │
 │   IPTPA Level 2 · PPR Certified     │
+│                                      │
+│   On time        ████████░░ 4.2      │
+│   Friendly       █████████░ 4.7      │
+│   Professional   ████████░░ 4.1      │
+│   Recommend      █████████░ 4.8      │
+│   Overall ⭐ 4.5 (32 reviews)       │
 │                                      │
 │   "5 years coaching experience.      │
 │    Specializing in beginners and     │
@@ -441,62 +603,63 @@ The bottom tab bar gains a **Coach** tab. The existing tabs remain.
 └──────────────────────────────────────┘
 ```
 
-### 9.4 Session Booking Flow (Player)
+### 9.4 Session Booking Screen (Player)
+
+Single screen — no intermediate navigation steps. Calendar at top, time slots appear below when a date is tapped, session type selector below that, sticky Continue button at the bottom.
 
 ```
-Step 1: Select Date                Step 2: Select Time
-┌────────────────────┐            ┌────────────────────┐
-│ ◀  Book Session    │            │ ◀  Select Time     │
-├────────────────────┤            ├────────────────────┤
-│                    │            │                    │
-│ Coach Nguyen Van A │            │ April 10, 2026     │
-│ 📍 65th Street PB  │            │ 📍 65th Street PB  │
-│                    │            │                    │
-│  April 2026        │            │  Available Slots:  │
-│  ┌──┬──┬──┬──┐    │            │                    │
-│  │ 9│10│11│12│    │            │  🟢 07:00 – 08:00 │
-│  │  │🟢│🟢│🟢│    │            │  🟢 08:00 – 09:00 │
-│  └──┴──┴──┴──┘    │            │  ⚫ 09:00 – 10:00 │
-│                    │            │  🟢 16:00 – 17:00 │
-│ 🟢 = available    │            │  🟢 17:00 – 18:00 │
-│                    │            │  ✅ 18:00 – 19:00 │
-│  Session type:     │            │                    │
-│  ● 1-on-1 (500k)  │            │ Court: Sân 1       │
-│  ○ Group  (250k/p)│            │ (auto-assigned)    │
-│                    │            │                    │
-│  [Continue →]      │            │  [Continue →]      │
-└────────────────────┘            └────────────────────┘
-
-Step 3: Confirm & Pay
-┌────────────────────────────┐
-│ ◀  Confirm Booking         │
-├────────────────────────────┤
-│                            │
-│ Coach Nguyen Van A         │
-│ April 10, 2026             │
-│ 18:00 – 19:00             │
-│ 65th Street PB – Sân 1    │
-│ Session: 1-on-1           │
-│                            │
-│ ┌────────────────────────┐ │
-│ │ Coach fee    350,000   │ │
-│ │ Court fee    150,000   │ │
-│ │ ──────────────────     │ │
-│ │ Total        500,000   │ │
-│ └────────────────────────┘ │
-│                            │
-│ Your credits: 3 remaining  │
-│                            │
-│ ┌────────────────────────┐ │
-│ │  [Use 1 Credit]        │ │
-│ └────────────────────────┘ │
-│                            │
-│ ┌────────────────────────┐ │
-│ │  [Pay via VietQR]      │ │
-│ └────────────────────────┘ │
-│                            │
-└────────────────────────────┘
+┌──────────────────────────────────────┐
+│ ◀  Book Session                      │
+├──────────────────────────────────────┤
+│                                      │
+│ Coach Nguyen Van A                   │
+│ 📍 65th Street PB                    │
+│                                      │
+│ ── Select Date ──                    │
+│  April 2026                     ▸    │
+│  ┌──┬──┬──┬──┬──┬──┬──┐            │
+│  │Mo│Tu│We│Th│Fr│Sa│Su│            │
+│  ├──┼──┼──┼──┼──┼──┼──┤            │
+│  │  │ 8│ 9│⬛│11│12│13│            │
+│  │  │  │🟢│10│  │🟢│🟢│           │
+│  ├──┼──┼──┼──┼──┼──┼──┤            │
+│  │14│15│16│17│18│19│20│            │
+│  │  │  │🟢│🟢│  │🟢│🟢│           │
+│  └──┴──┴──┴──┴──┴──┴──┘            │
+│  🟢 = available  ⬛ = selected      │
+│                                      │
+│ ── Available Slots (April 10) ──     │
+│  ┌──────────┐ ┌──────────┐          │
+│  │ 07:00    │ │ 08:00    │          │
+│  └──────────┘ └──────────┘          │
+│  ┌──────────┐ ┌──────────┐          │
+│  │ 16:00    │ │ 17:00    │          │
+│  └──────────┘ └──────────┘          │
+│  ┌──────────┐                        │
+│  │✅ 18:00  │  ← selected           │
+│  └──────────┘                        │
+│  Court: Sân 1 (auto-assigned)        │
+│                                      │
+│ ── Session Type ──                   │
+│  ┌──────────────┐ ┌──────────────┐  │
+│  │● 1-on-1      │ │○ Group       │  │
+│  │  500,000 VND  │ │  250,000/p   │  │
+│  └──────────────┘ └──────────────┘  │
+│                                      │
+│ ── Summary ──                        │
+│  Coach fee         350,000 VND       │
+│  Court fee         150,000 VND       │
+│  Total             500,000 VND       │
+│  Credits: 3 remaining               │
+│                                      │
+│ ┌──────────────────────────────────┐ │
+│ │       [ Continue → Pay ]         │ │
+│ └──────────────────────────────────┘ │
+│                                      │
+└──────────────────────────────────────┘
 ```
+
+The Summary section and slot list remain hidden until a date and time slot are both selected. Tapping "Continue" navigates to `SessionPaymentScreen` (VietQR or credit use).
 
 ### 9.5 Player Credit Dashboard
 
@@ -622,12 +785,13 @@ Coaches use the same Expo app but see a different navigation after signing in wi
 │  1-on-1 · VietQR (pending payment)  │
 │  [View Detail]                       │
 │                                      │
-│  ── Pending Requests ──              │
+│  ── Upcoming ──                      │
 │  ┌──────────────────────────────────┐│
-│  │ New booking request              ││
+│  │ Apr 8 · 14:00–15:00             ││
 │  │ Player: Le Linh                  ││
-│  │ Apr 8, 14:00 · 1-on-1           ││
-│  │ [Accept]  [Decline]              ││
+│  │ 65th Street PB · Sân 2          ││
+│  │ 1-on-1 · Auto-confirmed         ││
+│  │ [View Detail]                    ││
 │  └──────────────────────────────────┘│
 │                                      │
 └──────────────────────────────────────┘
@@ -859,6 +1023,29 @@ The court owner experience extends the existing admin panel at `/admin`. A new r
 │          │                                                      │
 │          │  [+ Invite Coach]                                    │
 │          │                                                      │
+│          │  Invite Coach Flow:                                  │
+│          │  ┌─────────────────────────────────────────────┐     │
+│          │  │ Enter coach phone number                    │     │
+│          │  │ ┌─────────────────────────────────────┐     │     │
+│          │  │ │ 0912 345 678                        │     │     │
+│          │  │ └─────────────────────────────────────┘     │     │
+│          │  │ OR paste coach profile link                 │     │
+│          │  │ ┌─────────────────────────────────────┐     │     │
+│          │  │ │ courtmap.vn/coach/abc123             │     │     │
+│          │  │ └─────────────────────────────────────┘     │     │
+│          │  │                                             │     │
+│          │  │ [Send Invite]  [Cancel]                     │     │
+│          │  └─────────────────────────────────────────────┘     │
+│          │                                                      │
+│          │  Coach receives push notification:                   │
+│          │  "[Venue Name] invited you to coach at their venue.  │
+│          │   Accept?" → Accept / Decline buttons in coach app   │
+│          │                                                      │
+│          │  Pending Invites                                     │
+│          │  ┌──────────────────────────────────────────────┐    │
+│          │  │ Coach Pham D  ·  Invited Apr 4  ·  [Cancel] │    │
+│          │  └──────────────────────────────────────────────┘    │
+│          │                                                      │
 └──────────┴──────────────────────────────────────────────────────┘
 ```
 
@@ -917,9 +1104,18 @@ model Coach {
   bio             String?
   certifications  String[]            // ["IPTPA Level 2", "PPR Certified"]
   specialties     String[]            // ["beginner", "advanced", "drills", "match_play", "kids"]
-  rating          Float?
+  ratingOverall       Float?
+  ratingOnTime        Float?
+  ratingFriendly      Float?
+  ratingProfessional  Float?
+  ratingRecommend     Float?
   reviewCount     Int                 @default(0)
   isActive        Boolean             @default(true)
+
+  // Subscription
+  subscriptionPlan     String         @default("trial")  // "trial" | "standard" | "pro"
+  subscriptionExpires  DateTime?
+  trialBookingsUsed    Int            @default(0)
 
   // Pricing (VND)
   hourlyRate1on1  Int                 // e.g., 500000
@@ -935,6 +1131,9 @@ model Coach {
   bankAccountName String?
   bankAccountNumber String?
   bankBin         String?             // for VietQR
+
+  // Abuse prevention — incremented each time coach flags ANY session
+  paymentFlagCount    Int            @default(0)   // lifetime total across ALL sessions; gate at 3
 
   courtLinks      CoachCourtLink[]
   availability    CoachAvailability[]
@@ -1003,6 +1202,9 @@ model CoachSession {
   paymentMethod   String?         // "credit" | "vietqr"
   paymentStatus   String          @default("pending")
   // pending → payment_submitted → confirmed → completed → canceled
+
+  // Payment flag (per-session)
+  paymentFlaggedAt    DateTime?   // when coach flagged payment not received on THIS session
 
   // Court slot reservation
   slotIds         String[]        // linked TimeSlot IDs (for court owner visibility)
@@ -1077,18 +1279,40 @@ model Credit {
 }
 
 model CoachReview {
-  id          String    @id @default(cuid())
-  coachId     String
-  coach       Coach     @relation(fields: [coachId], references: [id], onDelete: Cascade)
-  sessionId   String?
-  userId      String
-  userName    String
-  rating      Int       // 1-5
-  comment     String?
-  createdAt   DateTime  @default(now())
+  id              String    @id @default(cuid())
+  coachId         String
+  coach           Coach     @relation(fields: [coachId], references: [id], onDelete: Cascade)
+  sessionId       String?
+  userId          String
+  userName        String
+  ratingOnTime    Int       // 1-5
+  ratingFriendly  Int       // 1-5
+  ratingProfessional Int    // 1-5
+  ratingRecommend Int       // 1-5
+  ratingOverall   Float     // auto-calculated: avg of all 4 dimensions
+  comment         String?
+  createdAt       DateTime  @default(now())
 
   @@index([coachId])
   @@index([userId])
+}
+```
+
+### Coach Venue Invite Model
+
+```prisma
+model CoachVenueInvite {
+  id          String    @id @default(cuid())
+  coachId     String
+  venueId     String
+  invitedBy   String    // admin userId
+  status      String    @default("pending")  // "pending" | "accepted" | "declined"
+  createdAt   DateTime  @default(now())
+  respondedAt DateTime?
+
+  @@unique([coachId, venueId])
+  @@index([coachId])
+  @@index([venueId])
 }
 ```
 
@@ -1119,17 +1343,20 @@ model Venue {
 │            │                │                        │
 │            │       ┌────────▼─────────┐       ┌──────▼──────────┐
 │            │       │   CoachReview    │       │CoachAvailability │
-│            │       └──────────────────┘       └──────┬──────────┘
-│            │                                        │
-│            │──────▶┌──────────────────┐       ┌──────▼──────────┐
-│            │       │    Booking       │       │ CoachCourtLink   │
-│  (existing)│       │   (court-only)   │       └──────┬──────────┘
-└───────────┘       └────────┬─────────┘              │
-                             │                        │
-                      ┌──────▼──────┐          ┌──────▼──────┐
-                      │    Venue     │◀─────────│    Court     │
-                      │ (1,976)      │          │  (10,581)    │
-                      └─────────────┘          └─────────────┘
+│            │       │ (4-dim ratings)  │       └──────┬──────────┘
+│            │       └──────────────────┘              │
+│            │                                  ┌──────▼──────────┐
+│            │──────▶┌──────────────────┐       │ CoachCourtLink   │
+│            │       │    Booking       │       └──────┬──────────┘
+│  (existing)│       │   (court-only)   │              │
+└───────────┘       └────────┬─────────┘       ┌──────▼──────────┐
+                             │                 │CoachVenueInvite  │
+                      ┌──────▼──────┐          └──────┬──────────┘
+                      │    Venue     │◀───────────────┘
+                      │ (1,976)      │◀─────────┌─────────────┐
+                      └─────────────┘          │    Court     │
+                                               │  (10,581)    │
+                                               └─────────────┘
 ```
 
 ---
@@ -1150,6 +1377,14 @@ model Venue {
 | `GET` | `/api/coaches/[id]/reviews` | List reviews | Public |
 | `POST` | `/api/coaches/[id]/reviews` | Submit review after session | Player |
 
+### Coach Subscription APIs
+
+| Method | Endpoint | Description | Auth |
+|--------|----------|-------------|------|
+| `POST` | `/api/coaches/[id]/subscription` | Initiate subscription payment (VietQR) | Coach |
+| `PATCH` | `/api/coaches/[id]/subscription` | Confirm subscription payment | Coach |
+| `GET` | `/api/coaches/[id]/subscription` | Get current plan status | Coach |
+
 ### Coach Court Link APIs
 
 | Method | Endpoint | Description | Auth |
@@ -1165,8 +1400,9 @@ model Venue {
 | `POST` | `/api/sessions` | Book a coach session | Player |
 | `GET` | `/api/sessions` | List sessions (filtered by userId or coachId) | Player/Coach |
 | `GET` | `/api/sessions/[id]` | Session detail | Player/Coach |
-| `PATCH` | `/api/sessions/[id]` | Update session status (confirm, complete, cancel) | Coach |
+| `PATCH` | `/api/sessions/[id]` | Update session status (complete, cancel). Bookings auto-confirmed on creation. | Coach |
 | `PATCH` | `/api/sessions/[id]/payment` | Submit payment proof | Player |
+| `POST` | `/api/sessions/[id]/flag-payment` | Coach flags payment not received. Sets `CoachSession.paymentFlaggedAt`, increments `Coach.paymentFlagCount` (lifetime, max 3). 2hr window from player's payment submission. | Coach |
 | `POST` | `/api/sessions/[id]/join` | Join a group session | Player |
 | `DELETE` | `/api/sessions/[id]/leave` | Leave a group session | Player |
 
@@ -1179,12 +1415,20 @@ model Venue {
 | `GET` | `/api/credits/[id]` | Credit detail + transaction history | Player |
 | `PATCH` | `/api/credits/[id]/confirm` | Confirm credit pack payment | Coach |
 
+### Coach Invite APIs
+
+| Method | Endpoint | Description | Auth |
+|--------|----------|-------------|------|
+| `POST` | `/api/admin/venues/[id]/coaches/invite` | Court owner sends invite to coach | Owner |
+| `GET` | `/api/coaches/[id]/invites` | List pending invites for a coach | Coach |
+| `POST` | `/api/coaches/[id]/invites/[inviteId]/accept` | Coach accepts venue invite | Coach |
+| `POST` | `/api/coaches/[id]/invites/[inviteId]/decline` | Coach declines venue invite | Coach |
+
 ### Court Owner APIs (Admin Extension)
 
 | Method | Endpoint | Description | Auth |
 |--------|----------|-------------|------|
 | `GET` | `/api/admin/venues/[id]/coaches` | List coaches at venue | Owner |
-| `POST` | `/api/admin/venues/[id]/coaches/invite` | Invite coach to venue | Owner |
 | `GET` | `/api/admin/venues/[id]/sessions` | All sessions at venue (coach-mediated) | Owner |
 | `GET` | `/api/admin/venues/[id]/reports` | Revenue reports (direct vs. coach) | Owner |
 
@@ -1198,7 +1442,7 @@ model Venue {
 |--------|------|-------------|
 | `CoachListScreen` | Tab | Coach discovery with search/filter |
 | `CoachProfileScreen` | Stack | Full coach profile + book CTA |
-| `SessionBookingScreen` | Stack | Date → time → confirm flow |
+| `SessionBookingScreen` | Stack | Single screen: calendar + time slots + session type + summary. No intermediate steps. |
 | `SessionPaymentScreen` | Stack | VietQR payment or credit use |
 | `MyCreditsScreen` | Stack | Credit balances + history |
 | `BuyCreditPackScreen` | Stack | Select pack → VietQR payment |
@@ -1240,6 +1484,14 @@ model Venue {
 - [ ] **Coach profile API**: CRUD for coach profiles
 - [ ] **Coach availability API**: Weekly schedule + date overrides
 - [ ] **Court partnership API**: Link coaches to venues/courts
+- [ ] **Coach subscription model**: Trial logic, plan status, expiry check middleware
+- [ ] **Subscription renewal**: VietQR generation + confirmation flow
+- [ ] **CoachVenueInvite model**
+- [ ] **Invite send API** + push notification to coach
+- [ ] **Accept/decline API** + creates CoachCourtLink on accept
+- [ ] **Shared components**: Build all 12 components from Section 2b before any Phase 2 screen work begins (CoachCard, SessionCard, CreditBadge, RatingBar, StarRating, VietQRBlock, TimeSlotGrid, DatePicker, SectionHeader, EmptyState, BottomSheet, StatusChip)
+- [ ] **Platform safety audit**: Audit existing court booking components (DatePicker, TimeSlotGrid) — confirm they use no web primitives before reuse in coach flow
+- [ ] **Barrel export**: Create `components/index.ts` so all shared components are imported from one place
 
 ### Phase 2: Player Booking (Weeks 4–6)
 
@@ -1263,7 +1515,8 @@ model Venue {
 - [ ] **Today screen**: Daily sessions overview
 - [ ] **Schedule screen**: Week/month view + availability editor
 - [ ] **Players screen**: Player list, credits, earnings
-- [ ] **Session management**: Accept/decline requests, mark complete
+- [ ] **Session management**: Auto-confirmed bookings, cancel, mark complete
+- [ ] **Payment flag**: 2hr window logic, max 3 lifetime flags, revert booking to pending, notify player
 - [ ] **Profile settings**: Bio, pricing, bank account, policies
 
 ### Phase 5: Court Owner Web (Weeks 12–13)
@@ -1272,11 +1525,13 @@ model Venue {
 - [ ] **Dashboard enhancements**: Coach metrics, booking source breakdown
 - [ ] **Coaches page**: List coaches at venue, invite flow
 - [ ] **Revenue reports**: Direct vs. coach-mediated with charts
+- [ ] **Invite coach UI**: Phone/link input sheet, pending invites list with cancel option
 
 ### Phase 6: Reviews & Polish (Week 14)
 
 - [ ] **Review system**: Post-session rating + review
-- [ ] **Coach rating aggregation**: Average + count
+- [ ] **4-dimension rating**: Update review submission UI, update rating aggregation logic on Coach model, update coach profile display
+- [ ] **Coach rating aggregation**: Average + count per dimension
 - [ ] **Notifications**: Session reminders, payment confirmations, booking requests
 - [ ] **Edge cases**: Expired credits, double-booking prevention, concurrent group joins
 - [ ] **Testing & QA**: End-to-end flows for all three roles
@@ -1299,8 +1554,212 @@ model Venue {
 ## Appendix B: Open Questions
 
 1. **Coach verification**: Should there be an admin approval step before a coach profile goes live?
-2. **Commission model**: Should CourtMap take a platform fee from coach sessions in the future?
+2. ~~**Commission model**~~: Resolved — flat monthly subscription (trial / standard / pro). No per-session commission.
 3. **Push notifications**: Which notification service for mobile (Expo Push, FCM, APNs)?
 4. **Chat**: Should players and coaches be able to message each other in-app?
 5. **Recurring sessions**: Should players be able to book weekly recurring sessions with a coach?
 6. **Multi-language**: Vietnamese and English support for coach profiles and UI?
+
+---
+
+## Appendix C: Screen Count Summary
+
+### Totals
+
+| Category | Count |
+|----------|-------|
+| **Existing** (pre-feature, unchanged) | 9 |
+| **New** | 19 |
+| **Modified** (existing screens gaining new functionality) | 3 |
+| **Total after implementation** | 31 |
+
+### Existing Screens (unchanged — 9)
+
+| # | Screen | Platform | Notes |
+|---|--------|----------|-------|
+| 1 | `SearchScreen` | Mobile | Court search with filters |
+| 2 | `ResultsScreen` | Mobile | Venue list with sort/pagination |
+| 3 | `MapScreen` | Mobile | Map view (search + explore modes) |
+| 4 | `SavedScreen` | Mobile | Saved venues |
+| 5 | `ProfileScreen` | Mobile | User profile + settings |
+| 6 | `VenueDetail` | Mobile | Overlay/modal with availability, pricing, info tabs |
+| 7 | `AdminDashboard` | Web | Admin overview (pre-coach metrics) |
+| 8 | `AdminCourtsPage` | Web | Court management |
+| 9 | `AdminPaymentsPage` | Web | Payment management |
+
+### New Screens (19)
+
+| # | Screen | Platform | Role | Phase |
+|---|--------|----------|------|-------|
+| 1 | `CoachListScreen` | Mobile | Player | 2 |
+| 2 | `CoachProfileScreen` | Mobile | Player | 2 |
+| 3 | `SessionBookingScreen` | Mobile | Player | 2 |
+| 4 | `SessionPaymentScreen` | Mobile | Player | 2 |
+| 5 | `SessionDetailScreen` | Mobile | Player | 2 |
+| 6 | `MyCreditsScreen` | Mobile | Player | 3 |
+| 7 | `BuyCreditPackScreen` | Mobile | Player | 3 |
+| 8 | `RateSessionScreen` | Mobile | Player | 6 |
+| 9 | `CoachTodayScreen` | Mobile | Coach | 4 |
+| 10 | `CoachScheduleScreen` | Mobile | Coach | 4 |
+| 11 | `CoachPlayersScreen` | Mobile | Coach | 4 |
+| 12 | `CoachProfileSettingsScreen` | Mobile | Coach | 4 |
+| 13 | `AvailabilityEditorScreen` | Mobile | Coach | 4 |
+| 14 | `CoachSessionDetailScreen` | Mobile | Coach | 4 |
+| 15 | `CourtPartnershipScreen` | Mobile | Coach | 4 |
+| 16 | `CoachEarningsScreen` | Mobile | Coach | 4 |
+| 17 | `CoachesPage` | Web | Court Owner | 5 |
+| 18 | `CoachDetailPage` | Web | Court Owner | 5 |
+| 19 | `ReportsPage` | Web | Court Owner | 5 |
+
+### Modified Screens (3)
+
+| # | Screen | Platform | Modification |
+|---|--------|----------|-------------|
+| 1 | `BookingsScreen` | Mobile | Add segmented control: Court Bookings / Coach Sessions |
+| 2 | `OwnerDashboard` | Web | Add coach metrics, booking source breakdown, timeline heatmap |
+| 3 | `AdminBookingsPage` | Web | Add coach session filter alongside existing court bookings |
+
+
+Add a new section "16. Trust and Safety — Phase 1" 
+to COURTMAP_PRODUCT_SPEC.md before the Appendix.
+Update changelog to v1.2, April 6, 2026.
+
+---
+
+SECTION 16 — Trust and Safety (Phase 1)
+
+Simple rules only. More can be added later.
+
+---
+
+16.1 OTP phone verification
+
+Required before:
+- A player can make their first coach session booking
+- A coach profile becomes visible in search results
+
+Implementation:
+- Reuse the same OTP flow for both player and coach 
+  registration (SMS to phone number, 6-digit code, 
+  expires in 5 minutes)
+- Add to UserProfile:
+    phoneVerified       Boolean   @default(false)
+    phoneVerifiedAt     DateTime?
+- Add to Coach model:
+    phoneVerified       Boolean   @default(false)
+    phoneVerifiedAt     DateTime?
+- Block POST /api/sessions if 
+  UserProfile.phoneVerified = false
+- Block coach profile from appearing in 
+  GET /api/coaches search results if 
+  Coach.phoneVerified = false
+- Unverified coach sees banner in app:
+  "Verify your phone number to make your 
+   profile visible to players."
+
+---
+
+16.2 Booking limit — max 3 coaching hours per day 
+per player
+
+A player cannot book more than 3 hours of coaching 
+in a single calendar day across all coaches.
+
+Implementation:
+- On POST /api/sessions, check total duration of 
+  confirmed + pending coach sessions for this 
+  userId on the requested date
+- If total would exceed 3 hours, reject with 400:
+  "You can only book up to 3 hours of coaching 
+   per day. You have [N] hour(s) booked on 
+   this date."
+- Count sessions with status: pending, 
+  payment_submitted, or paid
+- Cancelled sessions do not count toward the limit
+
+---
+
+16.3 Rating eligibility — 3 completed sessions 
+required
+
+A player cannot leave a visible public rating for 
+a coach until they have completed 3 sessions 
+with that coach.
+
+Rules:
+- "Completed" = session paymentStatus is paid 
+  AND session is marked complete
+- Before 3 completed sessions:
+  - Player CAN submit a rating after each session 
+    (both player and coach can see it privately)
+  - Rating is NOT visible to other players yet
+  - RateSessionScreen shows note:
+    "Your rating is saved. It will be visible to 
+     other players after you complete 3 sessions 
+     with this coach. [N] of 3 completed."
+- After 3rd completed session:
+  - All previously submitted ratings for this 
+    coach by this player become public immediately
+  - All future ratings are public immediately
+- Each session can only be rated once, 
+  no editing after submission
+
+Add to CoachReview model:
+  isPublic     Boolean   @default(false)
+  // false until player has 3 completed sessions 
+  // with this coach
+
+Add to SessionParticipant model:
+  sessionNumberWithCoach  Int
+  // auto-calculated at session creation:
+  // count of prior completed sessions between 
+  // this userId and coachId + 1
+
+Logic on session completion:
+  When a session is marked complete for a player:
+  1. Increment sessionNumberWithCoach
+  2. If this player now has >= 3 completed sessions 
+     with this coach, set isPublic = true on ALL 
+     their CoachReview records for this coach
+
+GET /api/coaches/[id]/reviews:
+  Return only reviews where isPublic = true
+  (private reviews are never sent to other players)
+
+GET /api/coaches/[id] (coach's own profile view):
+  Return all reviews including isPublic = false, 
+  clearly labelled as "pending — visible after 
+  3 sessions"
+
+---
+
+Add to Phase 1 checklist:
+  - OTP verification for player and coach 
+    registration
+  - Gate coach search visibility on 
+    Coach.phoneVerified
+  - Gate player booking on 
+    UserProfile.phoneVerified
+
+Add to Phase 2 checklist:
+  - Booking limit: max 3 coaching hours per 
+    calendar day per player
+
+Add to Phase 6 checklist:
+  - Rating visibility: isPublic logic, 
+    3-session threshold, bulk publish on 
+    3rd completion
+  - Coach private review view in 
+    CoachSessionDetailScreen
+
+---
+
+Changelog v1.2 — April 6, 2026:
+- Added Section 16: Trust and Safety (Phase 1)
+- OTP phone verification required for players 
+  to book and for coaches to appear in search
+- Player booking capped at 3 coaching hours 
+  per day
+- Ratings require 3 completed sessions before 
+  becoming public; player and coach see them 
+  privately in the meantime

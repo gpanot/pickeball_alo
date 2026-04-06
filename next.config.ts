@@ -11,6 +11,9 @@ const nextConfig: NextConfig = {
   async rewrites() {
     return [{ source: '/viewer', destination: '/viewer.html' }];
   },
+  outputFileTracingIncludes: {
+    '/api/*': ['./lib/generated/prisma/*.node', './lib/generated/prisma/*.so.*'],
+  },
   webpack: (config, { isServer }) => {
     if (isServer) {
       config.plugins = [...config.plugins, new PrismaPlugin()];
