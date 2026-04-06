@@ -90,6 +90,64 @@ export async function markPaymentSubmitted(
   return res.json();
 }
 
+export async function updateBooking(
+  id: string,
+  data: {
+    userId: string;
+    userName: string;
+    userPhone: string;
+    date: string;
+    slots: BookingSlot[];
+    totalPrice: number;
+  },
+): Promise<BookingResult> {
+  const res = await fetch(`${BASE}/api/bookings/${encodeURIComponent(id)}`, {
+    method: 'PATCH',
+    headers: { 'Content-Type': 'application/json' },
+    body: JSON.stringify({
+      userId: data.userId,
+      userName: data.userName,
+      userPhone: data.userPhone,
+      date: data.date,
+      slots: data.slots,
+      totalPrice: data.totalPrice,
+    }),
+  });
+  if (res.status === 409) {
+    const err = await res.json().catch(() => ({}));
+    throw new Error(typeof err.error === 'string' ? err.error : 'Those slots are no longer available');
+  }
+  if (!res.ok) {
+    const err = await res.json().catch(() => ({}));
+    throw new Error(typeof err.error === 'string' ? err.error : 'Failed to update booking');
+  }
+  return res.json();
+}
+
+// ── AloBo slot overlay ────────────────────────────────────────────────
+
+export interface AloboSlotsResult {
+  supported: boolean;
+  fetchedAt?: string;
+  bookedKeys?: string[];
+  error?: string;
+}
+
+export async function getAloboSlots(
+  venueId: string,
+  date: string,
+): Promise<AloboSlotsResult> {
+  try {
+    const res = await fetch(
+      `${BASE}/api/venues/${encodeURIComponent(venueId)}/alobo-slots?date=${encodeURIComponent(date)}`,
+    );
+    if (!res.ok) return { supported: false };
+    return res.json();
+  } catch {
+    return { supported: false };
+  }
+}
+
 export async function getProfile(phone: string): Promise<UserProfileData | null> {
   const res = await fetch(`${BASE}/api/profile/${encodeURIComponent(phone)}`);
   if (res.status === 404) return null;

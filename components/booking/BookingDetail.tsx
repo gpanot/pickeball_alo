@@ -14,6 +14,7 @@ interface BookingDetailProps {
   onBack: () => void;
   onCancel: (id: string) => void;
   onRefreshBookings?: () => void;
+  onEditRequest?: (booking: BookingResult) => void;
   t: ThemeTokens;
 }
 
@@ -30,6 +31,7 @@ export default function BookingDetail({
   onBack,
   onCancel,
   onRefreshBookings,
+  onEditRequest,
   t,
 }: BookingDetailProps) {
   const [live, setLive] = useState(booking);
@@ -210,25 +212,46 @@ export default function BookingDetail({
         </div>
 
         {live.status === 'pending' ? (
-          <button
-            type="button"
-            onClick={() => void openPay()}
-            style={{
-              width: '100%',
-              padding: '16px 20px',
-              borderRadius: 14,
-              border: 'none',
-              background: t.accent,
-              color: '#000',
-              fontWeight: 800,
-              fontSize: 15,
-              cursor: 'pointer',
-              fontFamily: 'inherit',
-              marginBottom: 16,
-            }}
-          >
-            Pay now
-          </button>
+          <div style={{ display: 'flex', gap: 10, marginBottom: 16 }}>
+            <button
+              type="button"
+              onClick={() => void openPay()}
+              style={{
+                flex: 1,
+                padding: '16px 20px',
+                borderRadius: 14,
+                border: 'none',
+                background: t.accent,
+                color: '#000',
+                fontWeight: 800,
+                fontSize: 15,
+                cursor: 'pointer',
+                fontFamily: 'inherit',
+              }}
+            >
+              Pay now
+            </button>
+            {onEditRequest ? (
+              <button
+                type="button"
+                onClick={() => onEditRequest(live)}
+                style={{
+                  flex: 1,
+                  padding: '16px 20px',
+                  borderRadius: 14,
+                  border: `1px solid ${t.accent}`,
+                  background: 'transparent',
+                  color: t.accent,
+                  fontWeight: 700,
+                  fontSize: 15,
+                  cursor: 'pointer',
+                  fontFamily: 'inherit',
+                }}
+              >
+                Edit request
+              </button>
+            ) : null}
+          </div>
         ) : null}
 
         <div

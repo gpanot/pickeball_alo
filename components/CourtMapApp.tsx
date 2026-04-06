@@ -1,6 +1,6 @@
 'use client';
 
-import React, { useState, useCallback, useEffect } from 'react';
+import React, { useState, useCallback, useEffect, useRef } from 'react';
 import dynamic from 'next/dynamic';
 import SearchScreen from '@/components/screens/SearchScreen';
 import ResultsScreen from '@/components/screens/ResultsScreen';
@@ -23,6 +23,8 @@ import {
   durationIndexToHalfHourCount,
   pickSlotsForSearch,
 } from '@/lib/formatters';
+import { bookingSlotsToSelectedKeys } from '@/lib/booking-slot-keys';
+import { syncVenues as syncVenueCache, getCachedVenue } from '@/lib/venue-cache';
 import type { VenueResult, BookingResult, Screen, SortMode } from '@/lib/types';
 
 const MapScreenLazy = dynamic(() => import('@/components/screens/MapScreen'), {
@@ -69,6 +71,21 @@ export default function CourtMapApp() {
   /** Venue whose Book pill opened the sheet (drives “Book for …” → detail). */
   const [savedBookVenue, setSavedBookVenue] = useState<VenueResult | null>(null);
 
+  // ── Edit booking state ─────────────────────────────────────────────
+  const [bookingBeingEdited, setBookingBeingEdited] = useState<BookingResult | null>(null);
+  const editNavigatingRef = useRef(false);
+
+  // ── Search pagination (client-side windowing) ──────────────────────
+  const searchPageSize = 30;
+  const [searchTotalResults, setSearchTotalResults] = useState<VenueResult[]>([]);
+  const [searchDisplayCount, setSearchDisplayCount] = useState(searchPageSize);
+  const searchHasMore = searchDisplayCount < searchTotalResults.length;
+  const searchTotalCount = searchTotalResults.length;
+
+  // ── Map geolocation (lifted) ───────────────────────────────────────
+  const [mapUserLoc, setMapUserLoc] = useState<{ lat: number; lng: number } | null>(null);
+  const mapGeoInitDone = useRef(false);
+
   const t = dark ? darkTheme : lightTheme;
   const savedSet = new Set(savedIds);
 
@@ -82,6 +99,10 @@ export default function CourtMapApp() {
     getVenueCatalogCount()
       .then(setCatalogVenueCount)
       .catch(() => setCatalogVenueCount(null));
+  }, []);
+
+  useEffect(() => {
+    syncVenueCache().catch(() => {});
   }, []);
 
   useEffect(() => {
@@ -183,27 +204,41 @@ export default function CourtMapApp() {
         lng: 106.71,
         radius: 10,
       });
-      setVenues(results);
+      setSearchTotalResults(results);
+      setSearchDisplayCount(searchPageSize);
+      setVenues(results.slice(0, searchPageSize));
     } catch (err) {
       console.error('Search failed:', err);
+      setSearchTotalResults([]);
+      setSearchDisplayCount(searchPageSize);
       setVenues([]);
     } finally {
       setLoading(false);
     }
   }, [searchQuery, selectedDate, selectedDuration, sortBy]);
 
+  const loadMoreSearchResults = useCallback(() => {
+    if (!searchHasMore) return;
+    setSearchDisplayCount((prev) => {
+      const next = prev + searchPageSize;
+      setVenues(searchTotalResults.slice(0, next));
+      return next;
+    });
+  }, [searchHasMore, searchTotalResults]);
+
   /** Full catalog for Maps tab (no text query, worldwide radius). Slots use today’s date. */
   const refetchExploreVenues = useCallback(async () => {
     setLoading(true);
     try {
       const dateStr = toLocalDateKey(new Date());
+      const loc = mapUserLoc ?? { lat: 10.79, lng: 106.71 };
       const results = await searchVenues({
         query: '',
         date: dateStr,
         duration: '1h',
         sort: 'distance',
-        lat: 10.79,
-        lng: 106.71,
+        lat: loc.lat,
+        lng: loc.lng,
         radius: 20_000,
       });
       setVenues(results);
@@ -213,7 +248,7 @@ export default function CourtMapApp() {
     } finally {
       setLoading(false);
     }
-  }, []);
+  }, [mapUserLoc]);
 
   const goMapsTab = useCallback(() => {
     setScreen('maps');
@@ -246,10 +281,17 @@ export default function CourtMapApp() {
 
   const openDetail = useCallback(
     (v: VenueResult, opts?: { jumpToConfirm?: boolean }) => {
+      let venue = v;
+      if (!venue.courts || venue.courts.length === 0) {
+        const cached = getCachedVenue(venue.id);
+        if (cached && cached.courts && cached.courts.length > 0) {
+          venue = { ...cached, distance: venue.distance } as VenueResult;
+        }
+      }
       const hour = START_HOUR_OPTIONS[selectedTime]?.hour ?? 9;
       const n = durationIndexToHalfHourCount(selectedDuration);
-      const preset = pickSlotsForSearch(v, hour, n);
-      setDetailVenue(v);
+      const preset = pickSlotsForSearch(venue, hour, n);
+      setDetailVenue(venue);
       setSelectedSlots(preset);
       setDetailJumpToConfirm(Boolean(opts?.jumpToConfirm && preset.size > 0));
       setTimeout(() => setDetailVisible(true), 10);
@@ -260,8 +302,46 @@ export default function CourtMapApp() {
   const closeDetail = useCallback(() => {
     setDetailVisible(false);
     setDetailJumpToConfirm(false);
+    setBookingBeingEdited(null);
+    editNavigatingRef.current = false;
     setTimeout(() => setDetailVenue(null), 300);
   }, []);
+
+  const persistPlayerProfileFromBooking = useCallback((name: string, phone: string) => {
+    const n = name.trim();
+    const p = phone.trim();
+    if (!n || !p) return;
+    setUserName(n);
+    setUserPhone(p);
+  }, [setUserName, setUserPhone]);
+
+  const beginEditBooking = useCallback(async (booking: BookingResult) => {
+    if (booking.status === 'paid' || booking.status === 'canceled') return;
+    if (editNavigatingRef.current) return;
+    const days = getNextDays(7);
+    const idx = days.findIndex((d) => toLocalDateKey(d) === booking.date);
+    if (idx < 0) {
+      window.alert("This booking is not on a date in the next 7 days. Contact the venue to change it, or cancel and book again.");
+      return;
+    }
+    editNavigatingRef.current = true;
+    setBookingBeingEdited(booking);
+    setSelectedDate(idx);
+    setSelectedSlots(bookingSlotsToSelectedKeys(booking.slots));
+    persistPlayerProfileFromBooking(booking.userName, booking.userPhone);
+    setDetailJumpToConfirm(false);
+    try {
+      const dateStr = booking.date;
+      const v = await getVenue(booking.venueId, dateStr);
+      setDetailVenue(v);
+      setTimeout(() => setDetailVisible(true), 10);
+    } catch (err) {
+      console.error('beginEditBooking', err);
+      setBookingBeingEdited(null);
+      setSelectedSlots(new Set());
+      editNavigatingRef.current = false;
+    }
+  }, [persistPlayerProfileFromBooking]);
 
   const toggleSlot = useCallback((courtName: string, time: string) => {
     const key = `${courtName}|${time}`;
@@ -461,6 +541,9 @@ export default function CourtMapApp() {
             selectedTime={selectedTime}
             searchQuery={searchQuery}
             loading={loading}
+            searchHasMore={searchHasMore}
+            searchTotalCount={searchTotalCount}
+            onLoadMore={loadMoreSearchResults}
             onBack={backFromResults}
             onSort={handleSort}
             onToggleSaved={toggleSaved}
@@ -500,6 +583,10 @@ export default function CourtMapApp() {
             catalogVenueCount={catalogVenueCount}
             userName={userName}
             onOpenProfile={() => setScreen('profile')}
+            initialUserLoc={mapUserLoc}
+            onUserLocResolved={setMapUserLoc}
+            geoInitDone={mapGeoInitDone.current}
+            onGeoInitDone={useCallback(() => { mapGeoInitDone.current = true; }, [])}
           />
         )}
         {screen === 'saved' && (
@@ -522,6 +609,7 @@ export default function CourtMapApp() {
             onBack={backFromSavedOrBookings}
             onCancel={handleCancelBooking}
             onRefreshBookings={loadBookings}
+            onEdit={(b) => void beginEditBooking(b)}
             t={t}
           />
         )}
@@ -592,17 +680,19 @@ export default function CourtMapApp() {
           onAvailabilityDateChange={handleDetailAvailabilityDateChange}
           detailDateLoading={detailRefreshing}
           selectedTimeIndex={selectedTime}
+          editBookingId={bookingBeingEdited?.id ?? null}
           userId={userId}
           userName={userName}
           userPhone={userPhone}
           onClose={closeDetail}
           onToggleSlot={toggleSlot}
           onToggleSaved={toggleSaved}
-          onBookingComplete={() => {
-            if (userName || userPhone) {
-              // Profile already saved
-            }
+          onBookingComplete={(booking) => {
+            persistPlayerProfileFromBooking(booking.userName, booking.userPhone);
+            setBookingBeingEdited(null);
+            editNavigatingRef.current = false;
           }}
+          onPersistPlayerProfile={persistPlayerProfileFromBooking}
           onViewBookings={() => {
             closeDetail();
             goMyBookingsTab();

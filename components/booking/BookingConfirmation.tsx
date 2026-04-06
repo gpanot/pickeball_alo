@@ -32,7 +32,7 @@ export default function BookingConfirmation({
         overflow: 'hidden',
       }}
     >
-      <VietQrPaymentWeb booking={live} venue={venue} userId={userId} t={t} onBookingUpdated={setLive} />
+      <VietQrPaymentWeb booking={live} venue={venue} userId={userId} t={t} compact onBookingUpdated={setLive} />
     </div>
   );
 }

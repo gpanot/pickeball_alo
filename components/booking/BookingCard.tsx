@@ -9,6 +9,7 @@ interface BookingCardProps {
   booking: BookingResult;
   onCancel: (id: string) => void;
   onClick: () => void;
+  onEdit?: (booking: BookingResult) => void;
   t: ThemeTokens;
 }
 
@@ -19,11 +20,12 @@ const STATUS_CONFIG: Record<string, { label: string; colorKey: 'orange' | 'green
   canceled: { label: 'Canceled', colorKey: 'red' },
 };
 
-export default function BookingCard({ booking, onCancel, onClick, t }: BookingCardProps) {
+export default function BookingCard({ booking, onCancel, onClick, onEdit, t }: BookingCardProps) {
   const config = STATUS_CONFIG[booking.status] || STATUS_CONFIG.pending;
   const slots = booking.slots as BookingSlot[];
   const isCanceled = booking.status === 'canceled';
   const canCancel = booking.status === 'pending' || booking.status === 'payment_submitted';
+  const canEdit = booking.status === 'pending' && onEdit != null;
 
   const requestCancel = (e: React.MouseEvent) => {
     e.stopPropagation();
@@ -101,6 +103,28 @@ export default function BookingCard({ booking, onCancel, onClick, t }: BookingCa
             }}
           >
             Pay now
+          </button>
+        ) : null}
+        {canEdit ? (
+          <button
+            type="button"
+            onClick={(e) => {
+              e.stopPropagation();
+              onEdit!(booking);
+            }}
+            style={{
+              padding: '8px 16px',
+              borderRadius: 10,
+              background: 'transparent',
+              border: `1px solid ${t.accent}`,
+              color: t.accent,
+              fontSize: 12,
+              fontWeight: 700,
+              cursor: 'pointer',
+              fontFamily: 'inherit',
+            }}
+          >
+            Edit request
           </button>
         ) : null}
         {canCancel ? (

@@ -49,6 +49,10 @@ interface MapScreenProps {
   catalogVenueCount?: number | null;
   userName?: string;
   onOpenProfile?: () => void;
+  initialUserLoc?: { lat: number; lng: number } | null;
+  onUserLocResolved?: (loc: { lat: number; lng: number }) => void;
+  geoInitDone?: boolean;
+  onGeoInitDone?: () => void;
 }
 
 /** Pill colors tuned for dark vs light map tiles; WCAG-friendly contrast on fills. */
@@ -98,6 +102,10 @@ export default function MapScreen({
   catalogVenueCount,
   userName = '',
   onOpenProfile,
+  initialUserLoc,
+  onUserLocResolved,
+  geoInitDone = false,
+  onGeoInitDone,
 }: MapScreenProps) {
   const mapRef = useRef<HTMLDivElement>(null);
   const leafletMap = useRef<L.Map | null>(null);
@@ -170,13 +178,16 @@ export default function MapScreen({
         const m = leafletMap.current;
         if (!m) return;
         preferUserCenterRef.current = true;
-        ensureUserMarker(m, pos.coords.latitude, pos.coords.longitude);
-        applyUserView(m, pos.coords.latitude, pos.coords.longitude, { animate: true });
+        const lat = pos.coords.latitude;
+        const lng = pos.coords.longitude;
+        ensureUserMarker(m, lat, lng);
+        applyUserView(m, lat, lng, { animate: true });
+        onUserLocResolved?.({ lat, lng });
       },
       () => setGeoWorking(false),
       { enableHighAccuracy: true, timeout: 15_000, maximumAge: 60_000 },
     );
-  }, [applyUserView, ensureUserMarker]);
+  }, [applyUserView, ensureUserMarker, onUserLocResolved]);
 
   const focusVenueFromExplore = useCallback((v: VenueResult) => {
     preferUserCenterRef.current = false;
@@ -259,8 +270,21 @@ export default function MapScreen({
 
     const fitAll = () => fitVenueBoundsFromRef(map);
 
+    if (geoInitDone && initialUserLoc) {
+      preferUserCenterRef.current = true;
+      ensureUserMarker(map, initialUserLoc.lat, initialUserLoc.lng);
+      applyUserView(map, initialUserLoc.lat, initialUserLoc.lng, { animate: false });
+      return;
+    }
+
+    if (geoInitDone && !initialUserLoc) {
+      fitAll();
+      return;
+    }
+
     if (!navigator.geolocation) {
       geoPendingRef.current = false;
+      onGeoInitDone?.();
       fitAll();
       return;
     }
@@ -278,15 +302,19 @@ export default function MapScreen({
         preferUserCenterRef.current = true;
         ensureUserMarker(m, lat, lng);
         applyUserView(m, lat, lng, { animate: false });
+        onUserLocResolved?.({ lat, lng });
+        onGeoInitDone?.();
       },
       () => {
         geoPendingRef.current = false;
         setGeoWorking(false);
         preferUserCenterRef.current = false;
+        onGeoInitDone?.();
         fitAll();
       },
       { enableHighAccuracy: true, timeout: 15_000, maximumAge: 60_000 },
     );
+  // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [mapReady, ensureUserMarker, applyUserView]);
 
   useEffect(() => {

@@ -2,7 +2,7 @@
 
 import React, { useState } from 'react';
 import { BackIcon } from '@/components/ui/Icons';
-import { createBooking } from '@/lib/api';
+import { createBooking, updateBooking } from '@/lib/api';
 import type { ThemeTokens } from '@/lib/theme';
 import type { VenueResult, BookingResult } from '@/lib/types';
 
@@ -20,6 +20,8 @@ interface BookingFormProps {
   userId: string;
   defaultName: string;
   defaultPhone: string;
+  editBookingId?: string | null;
+  onPersistPlayerProfile?: (name: string, phone: string) => void;
   onBack: () => void;
   onSuccess: (booking: BookingResult) => void;
   t: ThemeTokens;
@@ -28,8 +30,11 @@ interface BookingFormProps {
 export default function BookingForm({
   venue, selectedSlots, totalPrice, searchDate,
   userId, defaultName, defaultPhone,
+  editBookingId,
+  onPersistPlayerProfile,
   onBack, onSuccess, t,
 }: BookingFormProps) {
+  const isEditing = Boolean(editBookingId);
   const [name, setName] = useState(defaultName);
   const [phone, setPhone] = useState(defaultPhone);
   const [notes, setNotes] = useState('');
@@ -44,33 +49,48 @@ export default function BookingForm({
     setLoading(true);
     setError('');
     try {
-      const booking = await createBooking({
-        venueId: venue.id,
-        venueName: venue.name,
-        venuePhone: venue.phone || undefined,
-        venueAddress: venue.address,
-        userId,
-        userName: name.trim(),
-        userPhone: phone.trim(),
-        date: searchDate,
-        slots: selectedSlots.map((s) => ({
-          courtName: s.courtName,
-          time: s.time,
-          duration: venue.use30MinSlots !== false ? 30 : 60,
-          price: s.price,
-        })),
-        totalPrice,
-        notes: notes.trim() || undefined,
-      });
+      const slots = selectedSlots.map((s) => ({
+        courtName: s.courtName,
+        time: s.time,
+        duration: venue.use30MinSlots !== false ? 30 : 60,
+        price: s.price,
+      }));
+
+      let booking: BookingResult;
+      if (isEditing && editBookingId) {
+        booking = await updateBooking(editBookingId, {
+          userId,
+          userName: name.trim(),
+          userPhone: phone.trim(),
+          date: searchDate,
+          slots,
+          totalPrice,
+        });
+      } else {
+        booking = await createBooking({
+          venueId: venue.id,
+          venueName: venue.name,
+          venuePhone: venue.phone || undefined,
+          venueAddress: venue.address,
+          userId,
+          userName: name.trim(),
+          userPhone: phone.trim(),
+          date: searchDate,
+          slots,
+          totalPrice,
+          notes: notes.trim() || undefined,
+        });
+      }
+      onPersistPlayerProfile?.(name.trim(), phone.trim());
       onSuccess(booking);
-    } catch {
-      setError('Failed to send booking request. Please try again.');
+    } catch (err) {
+      setError(err instanceof Error ? err.message : 'Failed to send booking request. Please try again.');
     } finally {
       setLoading(false);
     }
   };
 
-  const inputStyle = {
+  const inputStyle: React.CSSProperties = {
     width: '100%', padding: '14px 16px', borderRadius: 12,
     background: t.bgInput, border: `1px solid ${t.border}`,
     color: t.text, fontSize: 15, fontFamily: 'inherit',
@@ -83,7 +103,9 @@ export default function BookingForm({
         <button onClick={onBack} style={{ background: 'none', border: 'none', color: t.text, cursor: 'pointer', padding: 4, display: 'flex' }}>
           <BackIcon />
         </button>
-        <h2 style={{ fontSize: 18, fontWeight: 800, color: t.text, margin: 0 }}>Confirm Booking</h2>
+        <h2 style={{ fontSize: 18, fontWeight: 800, color: t.text, margin: 0 }}>
+          {isEditing ? 'Update booking' : 'Confirm Booking'}
+        </h2>
       </div>
 
       {/* Booking summary */}
@@ -111,21 +133,31 @@ export default function BookingForm({
 
       {/* User info */}
       <div style={{ display: 'flex', flexDirection: 'column', gap: 12, marginBottom: 20 }}>
-        <div>
-          <label style={{ fontSize: 12, fontWeight: 700, color: t.textMuted, textTransform: 'uppercase', letterSpacing: 1, marginBottom: 6, display: 'block' }}>Name</label>
-          <input type="text" value={name} onChange={(e) => setName(e.target.value)} placeholder="Your name" style={inputStyle} />
-        </div>
-        <div>
-          <label style={{ fontSize: 12, fontWeight: 700, color: t.textMuted, textTransform: 'uppercase', letterSpacing: 1, marginBottom: 6, display: 'block' }}>Phone</label>
-          <input type="tel" value={phone} onChange={(e) => setPhone(e.target.value)} placeholder="Phone number" style={inputStyle} />
-        </div>
-        <div>
-          <label style={{ fontSize: 12, fontWeight: 700, color: t.textMuted, textTransform: 'uppercase', letterSpacing: 1, marginBottom: 6, display: 'block' }}>Notes (optional)</label>
-          <textarea value={notes} onChange={(e) => setNotes(e.target.value)} placeholder="e.g. Need 4 paddles, Birthday group" rows={3} style={{ ...inputStyle, resize: 'none' }} />
-        </div>
+        {isEditing ? (
+          <div style={{ padding: '12px 16px', background: t.bgCard, borderRadius: 12, border: `1px solid ${t.border}` }}>
+            <div style={{ fontSize: 12, fontWeight: 700, color: t.textMuted, textTransform: 'uppercase', letterSpacing: 1, marginBottom: 6 }}>Your details</div>
+            <div style={{ fontSize: 15, color: t.text, fontWeight: 600 }}>{defaultName}</div>
+            <div style={{ fontSize: 14, color: t.textSec, marginTop: 2 }}>{defaultPhone}</div>
+          </div>
+        ) : (
+          <>
+            <div>
+              <label style={{ fontSize: 12, fontWeight: 700, color: t.textMuted, textTransform: 'uppercase', letterSpacing: 1, marginBottom: 6, display: 'block' }}>Name</label>
+              <input type="text" value={name} onChange={(e) => setName(e.target.value)} placeholder="Your name" style={inputStyle} />
+            </div>
+            <div>
+              <label style={{ fontSize: 12, fontWeight: 700, color: t.textMuted, textTransform: 'uppercase', letterSpacing: 1, marginBottom: 6, display: 'block' }}>Phone</label>
+              <input type="tel" value={phone} onChange={(e) => setPhone(e.target.value)} placeholder="Phone number" style={inputStyle} />
+            </div>
+            <div>
+              <label style={{ fontSize: 12, fontWeight: 700, color: t.textMuted, textTransform: 'uppercase', letterSpacing: 1, marginBottom: 6, display: 'block' }}>Notes (optional)</label>
+              <textarea value={notes} onChange={(e) => setNotes(e.target.value)} placeholder="e.g. Need 4 paddles, Birthday group" rows={3} style={{ ...inputStyle, resize: 'none' }} />
+            </div>
+          </>
+        )}
       </div>
 
-      {!defaultName && !defaultPhone && (
+      {!isEditing && !defaultName && !defaultPhone && (
         <div style={{ fontSize: 12, color: t.textSec, marginBottom: 16, padding: '8px 12px', background: t.accentBg, borderRadius: 10 }}>
           Your name and phone will be saved for future bookings
         </div>
@@ -146,7 +178,7 @@ export default function BookingForm({
           fontFamily: 'inherit', opacity: loading ? 0.7 : 1, transition: 'opacity 0.2s',
         }}
       >
-        {loading ? 'SENDING...' : 'SEND BOOKING REQUEST'}
+        {loading ? 'SENDING...' : isEditing ? 'UPDATE BOOKING REQUEST' : 'SEND BOOKING REQUEST'}
       </button>
     </div>
   );

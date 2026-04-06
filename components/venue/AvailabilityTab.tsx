@@ -8,8 +8,9 @@ import type { CourtResult } from '@/lib/types';
 interface AvailabilityTabProps {
   courts: CourtResult[];
   selectedSlots: Set<string>;
-  /** First slot at or after this time is scrolled to the left of each court strip (search / pre-pick). */
+  aloboBookedKeys?: Set<string>;
   scrollAnchorTime?: string | null;
+  prioritizeSelectedCourts?: boolean;
   onToggleSlot: (courtName: string, time: string) => void;
   t: ThemeTokens;
 }
@@ -17,7 +18,9 @@ interface AvailabilityTabProps {
 export default function AvailabilityTab({
   courts,
   selectedSlots,
+  aloboBookedKeys,
   scrollAnchorTime = null,
+  prioritizeSelectedCourts = false,
   onToggleSlot,
   t,
 }: AvailabilityTabProps) {
@@ -26,11 +29,22 @@ export default function AvailabilityTab({
     [courts],
   );
 
+  const courtsOrdered = useMemo(() => {
+    if (!prioritizeSelectedCourts || selectedSlots.size === 0) return courtsSorted;
+    const hasSelected = (crt: (typeof courtsSorted)[0]) =>
+      crt.slots.some((s) => selectedSlots.has(`${crt.name}|${s.time}`));
+    return [...courtsSorted].sort((a, b) => {
+      const sa = hasSelected(a) ? 1 : 0;
+      const sb = hasSelected(b) ? 1 : 0;
+      return sb - sa;
+    });
+  }, [courtsSorted, prioritizeSelectedCourts, selectedSlots]);
+
   const stripRefs = useRef<Map<string, HTMLDivElement | null>>(new Map());
 
   useLayoutEffect(() => {
     if (!scrollAnchorTime) return;
-    for (const crt of courtsSorted) {
+    for (const crt of courtsOrdered) {
       const strip = stripRefs.current.get(crt.name);
       if (!strip || crt.slots.length === 0) continue;
       const idx = firstSlotIndexAtOrAfter(crt.slots, scrollAnchorTime);
@@ -39,13 +53,19 @@ export default function AvailabilityTab({
         strip.scrollLeft = Math.max(0, btn.offsetLeft - 6);
       }
     }
-  }, [scrollAnchorTime, courtsSorted]);
+  }, [scrollAnchorTime, courtsOrdered]);
 
   return (
     <div>
-      {courtsSorted.map((crt, ci) => {
+      {courtsOrdered.map((crt, ci) => {
         const hasSlots = crt.slots.length > 0;
-        const openCount = crt.slots.filter((s) => !s.isBooked).length;
+        const openCount = crt.slots.filter((s) => {
+          const key = `${crt.name}|${s.time}`;
+          if (prioritizeSelectedCourts && selectedSlots.has(key)) return true;
+          if (s.isBooked) return false;
+          if (aloboBookedKeys?.has(key)) return false;
+          return true;
+        }).length;
 
         return (
           <div key={ci} style={{ padding: '12px 0', borderBottom: `1px solid ${t.border}`, opacity: !hasSlots ? 0.4 : 1 }}>
@@ -83,33 +103,40 @@ export default function AvailabilityTab({
                   const key = `${crt.name}|${slot.time}`;
                   const isSel = selectedSlots.has(key);
                   const isBooked = slot.isBooked;
+                  const isAloboBooked = !isBooked && !!aloboBookedKeys?.has(key);
+                  const blocked = isBooked || isAloboBooked;
+                  const canToggle = !blocked || isSel;
 
                   return (
                     <button
                       key={si}
                       type="button"
-                      onClick={() => !isBooked && onToggleSlot(crt.name, slot.time)}
-                      disabled={isBooked}
+                      onClick={() => canToggle && onToggleSlot(crt.name, slot.time)}
+                      disabled={!canToggle}
                       style={{
                         minWidth: 68,
                         padding: '8px 10px',
                         borderRadius: 10,
-                        border: 'none',
-                        cursor: isBooked ? 'default' : 'pointer',
-                        background: isSel ? t.accent : isBooked ? t.bgInput : t.bgCard,
-                        opacity: isBooked ? 0.35 : 1,
+                        border: isAloboBooked ? `1px solid ${t.orange}` : 'none',
+                        cursor: canToggle ? 'pointer' : 'default',
+                        background: isSel ? t.accent : blocked ? t.bgInput : t.bgCard,
+                        opacity: blocked && !isSel ? 0.35 : 1,
                         fontFamily: 'inherit',
                         transition: 'all 0.15s',
                         textAlign: 'center',
                         flexShrink: 0,
-                        outline: isSel ? 'none' : `1px solid ${t.border}`,
+                        outline: isSel ? 'none' : isAloboBooked ? 'none' : `1px solid ${t.border}`,
                         boxShadow: isSel ? `0 2px 8px ${t.accent}44` : 'none',
                       }}
                     >
                       <div style={{ fontSize: 13, fontWeight: 700, color: isSel ? '#000' : t.text, letterSpacing: -0.3 }}>{slot.time}</div>
-                      <div style={{ fontSize: 11, fontWeight: 600, color: isSel ? 'rgba(0,0,0,0.6)' : t.accent, marginTop: 1 }}>
-                        {slot.price >= 1000 ? `${Math.round(slot.price / 1000)}k` : `${slot.price}k`}
-                      </div>
+                      {isAloboBooked ? (
+                        <div style={{ fontSize: 9, fontWeight: 700, color: t.orange, marginTop: 1 }}>AloBo</div>
+                      ) : (
+                        <div style={{ fontSize: 11, fontWeight: 600, color: isSel ? 'rgba(0,0,0,0.6)' : t.accent, marginTop: 1 }}>
+                          {slot.price >= 1000 ? `${Math.round(slot.price / 1000)}k` : `${slot.price}k`}
+                        </div>
+                      )}
                     </button>
                   );
                 })}

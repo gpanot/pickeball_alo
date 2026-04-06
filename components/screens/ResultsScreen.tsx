@@ -1,6 +1,6 @@
 'use client';
 
-import React from 'react';
+import React, { useCallback, useEffect, useRef } from 'react';
 import ResultsSearchTopBar from '@/components/search/ResultsSearchTopBar';
 import VenueCard from '@/components/venue/VenueCard';
 import {
@@ -21,6 +21,9 @@ interface ResultsScreenProps {
   selectedTime: number;
   searchQuery: string;
   loading: boolean;
+  searchHasMore?: boolean;
+  searchTotalCount?: number;
+  onLoadMore?: () => void;
   onBack: () => void;
   onSort: (s: SortMode) => void;
   onToggleSaved: (id: string, e: React.MouseEvent) => void;
@@ -36,15 +39,35 @@ interface ResultsScreenProps {
 
 export default function ResultsScreen({
   venues, savedIds, sortBy, selectedDate, selectedDuration, selectedTime,
-  searchQuery, loading, onBack, onSort, onToggleSaved, onOpenVenue, onQuickBookVenue,
+  searchQuery, loading, searchHasMore, searchTotalCount, onLoadMore,
+  onBack, onSort, onToggleSaved, onOpenVenue, onQuickBookVenue,
   onSearchQueryChange, onDateChange, onDurationChange, onTimeChange,
   onRefetchSearch, t,
 }: ResultsScreenProps) {
+  const sentinelRef = useRef<HTMLDivElement>(null);
+
+  const handleIntersection = useCallback(
+    (entries: IntersectionObserverEntry[]) => {
+      if (entries[0]?.isIntersecting && searchHasMore) {
+        onLoadMore?.();
+      }
+    },
+    [searchHasMore, onLoadMore],
+  );
+
+  useEffect(() => {
+    const el = sentinelRef.current;
+    if (!el || !onLoadMore) return;
+    const obs = new IntersectionObserver(handleIntersection, { rootMargin: '200px' });
+    obs.observe(el);
+    return () => obs.disconnect();
+  }, [handleIntersection, onLoadMore]);
+
   return (
     <div style={{ minHeight: '100%', animation: 'slideUp 0.35s ease', paddingBottom: 100 }}>
       <ResultsSearchTopBar
         variant="list"
-        venuesCount={venues.length}
+        venuesCount={searchTotalCount ?? venues.length}
         sortBy={sortBy}
         selectedDate={selectedDate}
         selectedDuration={selectedDuration}
@@ -72,24 +95,32 @@ export default function ResultsScreen({
             <div style={{ fontSize: 14 }}>Try adjusting your search criteria</div>
           </div>
         ) : (
-          venues.map((v) => {
-            const hour = START_HOUR_OPTIONS[selectedTime]?.hour ?? 9;
-            const n = durationIndexToHalfHourCount(selectedDuration);
-            const preset = pickSlotsForSearch(v, hour, n);
-            const bookLabel = getBookTimeShortLabel(selectedTime);
-            return (
-              <VenueCard
-                key={v.id}
-                venue={v}
-                isSaved={savedIds.has(v.id)}
-                onToggleSaved={onToggleSaved}
-                onClick={() => onOpenVenue(v)}
-                bookButtonLabel={preset.size > 0 ? bookLabel : undefined}
-                onBookClick={preset.size > 0 ? () => onQuickBookVenue(v) : undefined}
-                t={t}
-              />
-            );
-          })
+          <>
+            {venues.map((v) => {
+              const hour = START_HOUR_OPTIONS[selectedTime]?.hour ?? 9;
+              const n = durationIndexToHalfHourCount(selectedDuration);
+              const preset = pickSlotsForSearch(v, hour, n);
+              const bookLabel = getBookTimeShortLabel(selectedTime);
+              return (
+                <VenueCard
+                  key={v.id}
+                  venue={v}
+                  isSaved={savedIds.has(v.id)}
+                  onToggleSaved={onToggleSaved}
+                  onClick={() => onOpenVenue(v)}
+                  bookButtonLabel={preset.size > 0 ? bookLabel : undefined}
+                  onBookClick={preset.size > 0 ? () => onQuickBookVenue(v) : undefined}
+                  t={t}
+                />
+              );
+            })}
+            <div ref={sentinelRef} />
+            {searchHasMore && (
+              <div style={{ textAlign: 'center', padding: '16px 0', fontSize: 13, color: t.textSec, fontWeight: 600 }}>
+                Showing {venues.length} of {searchTotalCount}
+              </div>
+            )}
+          </>
         )}
       </div>
     </div>

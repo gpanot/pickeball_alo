@@ -1,6 +1,6 @@
 'use client';
 
-import React, { useState, useMemo, useEffect, useRef } from 'react';
+import React, { useState, useMemo, useEffect, useRef, useCallback } from 'react';
 import { HeartIcon, ShareIcon, StarIcon, CourtIcon, PinIcon, DirectionsIcon } from '@/components/ui/Icons';
 import AvailabilityTab from './AvailabilityTab';
 import PricingTab from './PricingTab';
@@ -16,7 +16,47 @@ import {
 } from '@/lib/formatters';
 import type { ThemeTokens } from '@/lib/theme';
 import type { VenueResult, BookingResult } from '@/lib/types';
-import { getVenue } from '@/lib/api';
+import { getVenue, getAloboSlots } from '@/lib/api';
+
+function AloboFreshnessBar({
+  fetchedAt,
+  refreshing,
+  onRefresh,
+  t,
+}: {
+  fetchedAt: string;
+  refreshing: boolean;
+  onRefresh: () => void;
+  t: ThemeTokens;
+}) {
+  const [, setTick] = useState(0);
+  useEffect(() => {
+    const id = setInterval(() => setTick((n) => n + 1), 10_000);
+    return () => clearInterval(id);
+  }, []);
+
+  const secsAgo = Math.max(0, Math.round((Date.now() - new Date(fetchedAt).getTime()) / 1000));
+  const label = secsAgo < 60 ? `${secsAgo}s ago` : `${Math.floor(secsAgo / 60)}m ago`;
+
+  return (
+    <div style={{ display: 'flex', alignItems: 'center', padding: '0 20px 6px', gap: 6 }}>
+      <div style={{ width: 6, height: 6, borderRadius: 3, background: t.green, flexShrink: 0 }} />
+      <span style={{ fontSize: 11, color: t.textSec, fontWeight: 600 }}>AloBo · {label}</span>
+      <button
+        type="button"
+        onClick={onRefresh}
+        disabled={refreshing}
+        style={{
+          background: 'none', border: 'none', color: t.accent, fontSize: 11,
+          fontWeight: 700, cursor: refreshing ? 'wait' : 'pointer', fontFamily: 'inherit',
+          padding: '0 4px', opacity: refreshing ? 0.5 : 1,
+        }}
+      >
+        {refreshing ? '...' : 'Refresh'}
+      </button>
+    </div>
+  );
+}
 
 interface VenueDetailProps {
   venue: VenueResult;
@@ -32,6 +72,7 @@ interface VenueDetailProps {
   detailDateLoading?: boolean;
   /** Search time-of-day index; used to scroll availability when no slots are pre-selected. */
   selectedTimeIndex: number;
+  editBookingId?: string | null;
   userId: string;
   userName: string;
   userPhone: string;
@@ -39,6 +80,7 @@ interface VenueDetailProps {
   onToggleSlot: (courtName: string, time: string) => void;
   onToggleSaved: (id: string, e: React.MouseEvent) => void;
   onBookingComplete: (booking: BookingResult) => void;
+  onPersistPlayerProfile?: (name: string, phone: string) => void;
   onViewBookings: () => void;
   t: ThemeTokens;
 }
@@ -119,6 +161,7 @@ export default function VenueDetail({
   onAvailabilityDateChange,
   detailDateLoading = false,
   selectedTimeIndex,
+  editBookingId = null,
   userId,
   userName,
   userPhone,
@@ -126,12 +169,44 @@ export default function VenueDetail({
   onToggleSlot,
   onToggleSaved,
   onBookingComplete,
+  onPersistPlayerProfile,
   onViewBookings,
   t,
 }: VenueDetailProps) {
   const [detailTab, setDetailTab] = useState<'avail' | 'pricing' | 'info'>('avail');
   /** Search/list venues omit `payments`; hydrate from GET /api/venues/[id] for booking payment UI. */
   const [paymentHydration, setPaymentHydration] = useState<VenueResult | null>(null);
+
+  // ── AloBo slot overlay ────────────────────────────────────────────
+  const [aloboBookedKeys, setAloboBookedKeys] = useState<Set<string>>(new Set());
+  const [aloboFetchedAt, setAloboFetchedAt] = useState<string | null>(null);
+  const [aloboSupported, setAloboSupported] = useState(false);
+  const [aloboRefreshing, setAloboRefreshing] = useState(false);
+
+  const fetchAlobo = useCallback(async (vid: string, date: string) => {
+    setAloboRefreshing(true);
+    try {
+      const result = await getAloboSlots(vid, date);
+      setAloboSupported(result.supported);
+      if (result.supported && result.bookedKeys) {
+        setAloboBookedKeys(new Set(result.bookedKeys));
+        setAloboFetchedAt(result.fetchedAt ?? new Date().toISOString());
+      } else {
+        setAloboBookedKeys(new Set());
+        setAloboFetchedAt(null);
+      }
+    } catch {
+      setAloboBookedKeys(new Set());
+      setAloboFetchedAt(null);
+    } finally {
+      setAloboRefreshing(false);
+    }
+  }, []);
+
+  useEffect(() => {
+    if (!visible || !venue.id || !searchDate) return;
+    void fetchAlobo(venue.id, searchDate);
+  }, [visible, venue.id, searchDate, fetchAlobo]);
 
   useEffect(() => {
     setPaymentHydration(null);
@@ -372,10 +447,20 @@ export default function VenueDetail({
                       onSelect={onAvailabilityDateChange}
                       t={t}
                     />
+                    {aloboSupported && aloboFetchedAt && (
+                      <AloboFreshnessBar
+                        fetchedAt={aloboFetchedAt}
+                        refreshing={aloboRefreshing}
+                        onRefresh={() => void fetchAlobo(venue.id, searchDate)}
+                        t={t}
+                      />
+                    )}
                     <AvailabilityTab
                       courts={displayVenue.courts}
                       selectedSlots={selectedSlots}
+                      aloboBookedKeys={aloboBookedKeys}
                       scrollAnchorTime={availabilityScrollAnchor ?? searchHourScrollAnchor}
+                      prioritizeSelectedCourts={editBookingId != null}
                       onToggleSlot={onToggleSlot}
                       t={t}
                     />
@@ -404,6 +489,8 @@ export default function VenueDetail({
               userId={userId}
               defaultName={userName}
               defaultPhone={userPhone}
+              editBookingId={editBookingId}
+              onPersistPlayerProfile={onPersistPlayerProfile}
               onBack={() => setStep('detail')}
               onSuccess={handleBookingSuccess}
               t={t}

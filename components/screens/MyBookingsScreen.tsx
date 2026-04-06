@@ -14,6 +14,7 @@ interface MyBookingsScreenProps {
   onBack: () => void;
   onCancel: (id: string) => void;
   onRefreshBookings?: () => void;
+  onEdit?: (booking: BookingResult) => void;
   t: ThemeTokens;
 }
 
@@ -26,6 +27,7 @@ export default function MyBookingsScreen({
   onBack,
   onCancel,
   onRefreshBookings,
+  onEdit,
   t,
 }: MyBookingsScreenProps) {
   const [tab, setTab] = useState<TabKey>('upcoming');
@@ -50,6 +52,7 @@ export default function MyBookingsScreen({
         onBack={() => setSelectedBooking(null)}
         onCancel={onCancel}
         onRefreshBookings={onRefreshBookings}
+        onEditRequest={onEdit}
         t={t}
       />
     );
@@ -99,6 +102,7 @@ export default function MyBookingsScreen({
               booking={b}
               onCancel={onCancel}
               onClick={() => setSelectedBooking(b)}
+              onEdit={onEdit}
               t={t}
             />
           ))

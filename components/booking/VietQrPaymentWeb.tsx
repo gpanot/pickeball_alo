@@ -91,6 +91,7 @@ export default function VietQrPaymentWeb({
   userId,
   t,
   showSuccessHeader = true,
+  compact = false,
   onBookingUpdated,
 }: {
   booking: BookingResult;
@@ -98,6 +99,7 @@ export default function VietQrPaymentWeb({
   userId: string;
   t: ThemeTokens;
   showSuccessHeader?: boolean;
+  compact?: boolean;
   onBookingUpdated?: (b: BookingResult) => void;
 }) {
   const [live, setLive] = useState(booking);
@@ -150,7 +152,7 @@ export default function VietQrPaymentWeb({
   const displayAcct = (dynamicPay ?? manualPay)?.accountNumber ?? '';
   const showBankCard = payScenario !== 1 && Boolean(displayAcct);
 
-  const qrSize = 200;
+  const qrSize = compact ? 160 : 200;
 
   const onDownloadQr = async () => {
     if (!activeQrUrl) return;
@@ -438,8 +440,22 @@ export default function VietQrPaymentWeb({
             This venue has not added payment details yet. Please contact them to complete payment.
           </p>
           {venue.phone ? (
-            <a href={`tel:${venue.phone}`} style={{ display: 'inline-block', marginTop: 12, color: t.accent, fontWeight: 800 }}>
-              {venue.phone}
+            <a
+              href={`tel:${venue.phone}`}
+              style={{
+                display: 'block',
+                marginTop: 12,
+                padding: '14px 20px',
+                borderRadius: 14,
+                background: t.accent,
+                color: '#000',
+                fontWeight: 800,
+                fontSize: 15,
+                textDecoration: 'none',
+                textAlign: 'center',
+              }}
+            >
+              Call {venue.phone}
             </a>
           ) : null}
         </div>
@@ -450,9 +466,11 @@ export default function VietQrPaymentWeb({
       {payScenario === 2 && staticQrUrl ? (
         <>
           {qrRow(staticQrUrl)}
-          <p style={{ fontSize: 13, color: t.textSec, marginTop: 4, marginBottom: 8, lineHeight: 1.4 }}>
-            Save the QR and upload it in your bank app. Your amount is shown on your booking above.
-          </p>
+          {!compact && (
+            <p style={{ fontSize: 13, color: t.textSec, marginTop: 4, marginBottom: 8, lineHeight: 1.4 }}>
+              Save the QR and upload it in your bank app. Your amount is shown on your booking above.
+            </p>
+          )}
         </>
       ) : payScenario === 2 && !staticQrUrl ? (
         <p style={{ color: t.textSec, fontSize: 14, marginBottom: 16, textAlign: 'center' }}>
@@ -575,13 +593,13 @@ export default function VietQrPaymentWeb({
           onClick={() => void paid()}
           style={{
             width: '100%',
-            padding: '16px 20px',
-            borderRadius: 14,
+            padding: compact ? '12px 16px' : '16px 20px',
+            borderRadius: compact ? 12 : 14,
             border: 'none',
             background: canSubmit ? t.accent : `${t.accent}40`,
             color: '#000',
             fontWeight: 800,
-            fontSize: 15,
+            fontSize: compact ? 14 : 15,
             cursor: canSubmit ? 'pointer' : 'not-allowed',
             fontFamily: 'inherit',
             opacity: submitting ? 0.7 : canSubmit ? 1 : 0.6,
