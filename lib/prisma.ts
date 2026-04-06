@@ -1,7 +1,11 @@
 import { PrismaClient } from '@/lib/generated/prisma/client';
 
-const globalForPrisma = globalThis as unknown as { prisma: PrismaClient };
+/**
+ * Single PrismaClient per serverless isolate (Vercel / Node).
+ * Do not gate this on NODE_ENV — without `globalThis` reuse, each invocation opens new pools and causes 500s.
+ */
+const globalForPrisma = globalThis as unknown as { prisma?: PrismaClient };
 
-export const prisma = globalForPrisma.prisma || new PrismaClient();
+export const prisma: PrismaClient = globalForPrisma.prisma ?? new PrismaClient();
 
-if (process.env.NODE_ENV !== 'production') globalForPrisma.prisma = prisma;
+globalForPrisma.prisma = prisma;

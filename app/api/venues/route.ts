@@ -5,6 +5,9 @@ import { venueSearchTokensWhere } from '@/lib/venue-search';
 import { sortSlotsByTime } from '@/lib/formatters';
 import { parsePricingRows } from '@/lib/pricing';
 import { computeCourtSlots, loadSlotBookStateForCourts } from '@/lib/venue-slots';
+import { guardDatabaseOr503, prismaRouteErrorResponse } from '@/lib/api-db-guard';
+
+export const runtime = 'nodejs';
 
 /** Default “you are here” for radius search (HCMC core) when the client does not send GPS. */
 const DEFAULT_REF_LAT = 10.79;
@@ -34,6 +37,9 @@ function geoBoundingWhere(refLat: number, refLng: number, radiusKm: number): Pri
 }
 
 export async function GET(req: NextRequest) {
+  const denied = guardDatabaseOr503();
+  if (denied) return denied;
+
   const sp = req.nextUrl.searchParams;
   const q = (sp.get('q') || '').trim();
   const date = sp.get('date') || new Date().toISOString().slice(0, 10);
@@ -53,17 +59,27 @@ export async function GET(req: NextRequest) {
   const venueWhere: Prisma.VenueWhereInput =
     tokenWhere != null ? { AND: [tokenWhere, bboxWhere] } : bboxWhere;
 
-  const venues = await prisma.venue.findMany({
+  let venues;
+  try {
+    venues = await prisma.venue.findMany({
     where: venueWhere,
     include: {
       courts: true,
       pricingTables: { orderBy: { sortOrder: 'asc' } },
       dateOverrides: true,
     },
-  });
+    });
+  } catch (e) {
+    return prismaRouteErrorResponse('GET /api/venues findMany', e);
+  }
 
   const courtIds = venues.flatMap((v) => v.courts.map((c) => c.id));
-  const bookState = await loadSlotBookStateForCourts(courtIds, date);
+  let bookState;
+  try {
+    bookState = await loadSlotBookStateForCourts(courtIds, date);
+  } catch (e) {
+    return prismaRouteErrorResponse('GET /api/venues loadSlotBookStateForCourts', e);
+  }
 
   let results = venues.map((v) => {
     const distance = haversineKm(refLat, refLng, v.lat, v.lng);
