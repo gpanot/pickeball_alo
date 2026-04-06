@@ -3,8 +3,8 @@
   "private": true,
   "scripts": {
     "dev": "next dev -H 0.0.0.0",
-    "postinstall": "prisma generate",
-    "build": "prisma generate && prisma migrate deploy && next build",
+    "postinstall": "node scripts/prisma-generate-ensure-env.mjs",
+    "build": "node scripts/vercel-build.mjs",
     "start": "next start",
     "lint": "next lint",
     "db:seed": "npx tsx prisma/seed.ts",
