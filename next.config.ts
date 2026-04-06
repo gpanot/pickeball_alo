@@ -1,6 +1,8 @@
 import type { NextConfig } from 'next';
 import path from 'path';
 import { fileURLToPath } from 'url';
+// @ts-expect-error -- no type declarations for this plugin
+import { PrismaPlugin } from '@prisma/nextjs-monorepo-workaround-plugin';
 
 const __dirname = path.dirname(fileURLToPath(import.meta.url));
 
@@ -8,6 +10,12 @@ const nextConfig: NextConfig = {
   reactStrictMode: true,
   async rewrites() {
     return [{ source: '/viewer', destination: '/viewer.html' }];
+  },
+  webpack: (config, { isServer }) => {
+    if (isServer) {
+      config.plugins = [...config.plugins, new PrismaPlugin()];
+    }
+    return config;
   },
 };
 
