@@ -1,5 +1,5 @@
-import { useEffect } from 'react';
-import { Platform, View } from 'react-native';
+import { useEffect, useState } from 'react';
+import { Image, Platform, View } from 'react-native';
 import { Stack } from 'expo-router';
 import * as SplashScreen from 'expo-splash-screen';
 import { useFonts, DMSans_400Regular, DMSans_600SemiBold, DMSans_700Bold, DMSans_800ExtraBold } from '@expo-google-fonts/dm-sans';
@@ -13,8 +13,10 @@ import { CourtMapProvider } from '@/context/CourtMapContext';
 
 SplashScreen.preventAutoHideAsync();
 
+const FONT_TIMEOUT_MS = 5000;
+
 export default function RootLayout() {
-  const [loaded, error] = useFonts({
+  const [fontsLoaded, fontError] = useFonts({
     DMSans_400Regular,
     DMSans_600SemiBold,
     DMSans_700Bold,
@@ -22,17 +24,31 @@ export default function RootLayout() {
     ArchivoBlack_400Regular,
   });
 
-  useEffect(() => {
-    if (error) throw error;
-  }, [error]);
+  const [timedOut, setTimedOut] = useState(false);
 
   useEffect(() => {
-    if (loaded) SplashScreen.hideAsync();
-  }, [loaded]);
+    const id = setTimeout(() => setTimedOut(true), FONT_TIMEOUT_MS);
+    return () => clearTimeout(id);
+  }, []);
 
-  if (!loaded) {
+  const ready = fontsLoaded || timedOut;
+
+  useEffect(() => {
+    if (fontError) console.warn('Font load error:', fontError);
+  }, [fontError]);
+
+  useEffect(() => {
+    if (ready) SplashScreen.hideAsync();
+  }, [ready]);
+
+  if (!ready) {
     return (
-      <View style={{ flex: 1, backgroundColor: '#0e0e0e' }}>
+      <View style={{ flex: 1, backgroundColor: '#0e0e0e', alignItems: 'center', justifyContent: 'center' }}>
+        <Image
+          source={require('../assets/images/icon.png')}
+          style={{ width: 84, height: 84, marginBottom: 12 }}
+          resizeMode="contain"
+        />
         <StatusBar style="light" />
       </View>
     );
