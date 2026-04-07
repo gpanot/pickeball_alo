@@ -3,20 +3,41 @@ import bcrypt from 'bcryptjs';
 import prisma from '@/lib/prisma';
 import { signCoachToken } from '@/lib/coach-session';
 
+function coachLoginDebugEnabled(): boolean {
+  return process.env.COACH_LOGIN_DEBUG === '1' || process.env.COACH_LOGIN_DEBUG === 'true';
+}
+
 export async function POST(req: NextRequest) {
   try {
-    const { phone, password } = await req.json();
+    const body = await req.json();
+    const phoneRaw = body?.phone;
+    const password = body?.password;
+    /** Must match register route normalization or lookups miss and return 401. */
+    const phone = String(phoneRaw ?? '').trim();
 
     if (!phone || !password) {
       return NextResponse.json({ error: 'phone and password are required' }, { status: 400 });
     }
 
     const coach = await prisma.coach.findUnique({ where: { phone } });
+    const bcryptOk = coach ? bcrypt.compareSync(String(password), coach.passwordHash) : false;
+
+    if (coachLoginDebugEnabled()) {
+      console.info('[coach-login]', {
+        phoneLen: phone.length,
+        phoneTail: phone.slice(-4),
+        coachFound: !!coach,
+        coachId: coach?.id ?? null,
+        bcryptOk,
+        passwordHashLen: coach?.passwordHash?.length ?? 0,
+      });
+    }
+
     if (!coach) {
       return NextResponse.json({ error: 'Invalid credentials' }, { status: 401 });
     }
 
-    if (!bcrypt.compareSync(password, coach.passwordHash)) {
+    if (!bcryptOk) {
       return NextResponse.json({ error: 'Invalid credentials' }, { status: 401 });
     }
 
