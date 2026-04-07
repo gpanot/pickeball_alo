@@ -11,10 +11,12 @@ import { Platform } from 'react-native';
 
 const extra = (Constants.expoConfig?.extra ?? {}) as { apiBaseUrl?: string };
 
+const isDevBuild = typeof __DEV__ !== 'undefined' && __DEV__;
+
 const rawBaseUrl =
   (typeof process !== 'undefined' && process.env?.EXPO_PUBLIC_API_BASE_URL) ||
   extra.apiBaseUrl ||
-  'http://localhost:3000';
+  (isDevBuild ? 'http://localhost:3000' : 'https://pickeball-alo-blue.vercel.app');
 
 function stripTrailingSlash(s: string): string {
   return s.replace(/\/$/, '');
@@ -86,8 +88,7 @@ function baseUrlUsesLoopback(s: string): boolean {
 }
 
 const resolved =
-  typeof __DEV__ !== 'undefined' &&
-  __DEV__ &&
+  isDevBuild &&
   Platform.OS !== 'web' &&
   baseUrlUsesLoopback(rawBaseUrl)
     ? resolveLoopbackForNativeDev(rawBaseUrl)

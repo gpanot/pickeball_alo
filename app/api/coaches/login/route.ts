@@ -20,7 +20,21 @@ export async function POST(req: NextRequest) {
       return NextResponse.json({ error: 'Invalid credentials' }, { status: 401 });
     }
 
-    const token = signCoachToken(coach.id, coach.phone, coach.subscriptionPlan);
+    let token: string;
+    try {
+      token = signCoachToken(coach.id, coach.phone, coach.subscriptionPlan);
+    } catch (e) {
+      if (e instanceof Error && e.message === 'COACH_JWT_SECRET_MISSING') {
+        return NextResponse.json(
+          {
+            error:
+              'Coach login is temporarily unavailable: set COACH_JWT_SECRET in the server environment (Vercel → Settings → Environment Variables).',
+          },
+          { status: 503 },
+        );
+      }
+      throw e;
+    }
 
     return NextResponse.json({
       token,
@@ -44,6 +58,15 @@ export async function POST(req: NextRequest) {
     });
   } catch (err) {
     console.error('Coach login error:', err);
+    if (err instanceof Error && err.message === 'COACH_JWT_SECRET_MISSING') {
+      return NextResponse.json(
+        {
+          error:
+            'Coach login is temporarily unavailable: set COACH_JWT_SECRET in the server environment.',
+        },
+        { status: 503 },
+      );
+    }
     return NextResponse.json({ error: 'Internal server error' }, { status: 500 });
   }
 }

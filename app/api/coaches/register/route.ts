@@ -77,7 +77,22 @@ export async function POST(req: NextRequest) {
       },
     });
 
-    const token = signCoachToken(coach.id, coach.phone, coach.subscriptionPlan);
+    let token: string;
+    try {
+      token = signCoachToken(coach.id, coach.phone, coach.subscriptionPlan);
+    } catch (e) {
+      if (e instanceof Error && e.message === 'COACH_JWT_SECRET_MISSING') {
+        await prisma.coach.delete({ where: { id: coach.id } }).catch(() => {});
+        return NextResponse.json(
+          {
+            error:
+              'Coach registration is temporarily unavailable: set COACH_JWT_SECRET in the server environment (Vercel → Settings → Environment Variables).',
+          },
+          { status: 503 },
+        );
+      }
+      throw e;
+    }
 
     return NextResponse.json({
       token,
@@ -92,6 +107,15 @@ export async function POST(req: NextRequest) {
     }, { status: 201 });
   } catch (err) {
     console.error('Coach register error:', err);
+    if (err instanceof Error && err.message === 'COACH_JWT_SECRET_MISSING') {
+      return NextResponse.json(
+        {
+          error:
+            'Coach registration is temporarily unavailable: set COACH_JWT_SECRET in the server environment.',
+        },
+        { status: 503 },
+      );
+    }
     if (err && typeof err === 'object' && 'code' in err) {
       const code = String((err as { code?: string }).code ?? '');
       if (code === 'P2002') {

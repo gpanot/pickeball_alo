@@ -9,6 +9,17 @@ import type {
 import { API_BASE_URL } from './config';
 
 const BASE = API_BASE_URL.replace(/\/$/, '');
+const NETWORK_TIMEOUT_MS = 7000;
+
+async function fetchWithTimeout(input: RequestInfo | URL, init?: RequestInit): Promise<Response> {
+  const controller = new AbortController();
+  const timer = setTimeout(() => controller.abort(), NETWORK_TIMEOUT_MS);
+  try {
+    return await fetch(input, { ...init, signal: controller.signal });
+  } finally {
+    clearTimeout(timer);
+  }
+}
 
 async function readApiError(res: Response, fallback: string): Promise<string> {
   const contentType = res.headers.get('content-type') ?? '';
@@ -293,11 +304,16 @@ export async function coachLogin(
   token: string;
   coach: CoachResult;
 }> {
-  const res = await fetch(`${BASE}/api/coaches/login`, {
-    method: 'POST',
-    headers: { 'Content-Type': 'application/json' },
-    body: JSON.stringify({ phone, password }),
-  });
+  let res: Response;
+  try {
+    res = await fetchWithTimeout(`${BASE}/api/coaches/login`, {
+      method: 'POST',
+      headers: { 'Content-Type': 'application/json' },
+      body: JSON.stringify({ phone, password }),
+    });
+  } catch {
+    throw new Error(`Cannot reach server (${BASE}) in time. Check API base URL and network.`);
+  }
   if (!res.ok) {
     const msg = await readApiError(res, 'Invalid credentials');
     throw new Error(msg);

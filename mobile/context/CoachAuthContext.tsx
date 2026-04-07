@@ -1,4 +1,4 @@
-import React, { createContext, useContext, useState, useCallback, useEffect, type ReactNode } from 'react';
+import React, { createContext, useContext, useState, useCallback, useEffect, useRef, type ReactNode } from 'react';
 import AsyncStorage from '@react-native-async-storage/async-storage';
 import { coachLogin, coachRegister, getCoach } from '@/mobile/lib/coach-api';
 import type { CoachResult } from '@/mobile/lib/coach-types';
@@ -38,6 +38,7 @@ export function CoachAuthProvider({ children }: { children: ReactNode }) {
   const [coach, setCoach] = useState<CoachResult | null>(null);
   const [loading, setLoading] = useState(true);
   const [error, setError] = useState<string | null>(null);
+  const inFlight = useRef<null | 'login' | 'register'>(null);
 
   useEffect(() => {
     (async () => {
@@ -57,6 +58,8 @@ export function CoachAuthProvider({ children }: { children: ReactNode }) {
   }, []);
 
   const login = useCallback(async (phone: string, password: string) => {
+    if (inFlight.current) return;
+    inFlight.current = 'login';
     setLoading(true);
     setError(null);
     try {
@@ -72,18 +75,25 @@ export function CoachAuthProvider({ children }: { children: ReactNode }) {
       }
 
       setCoach(fullCoach);
-      await AsyncStorage.setItem(TOKEN_KEY, result.token);
-      await AsyncStorage.setItem(COACH_KEY, JSON.stringify(fullCoach));
+      try {
+        await AsyncStorage.setItem(TOKEN_KEY, result.token);
+        await AsyncStorage.setItem(COACH_KEY, JSON.stringify(fullCoach));
+      } catch {
+        // Keep session in memory even if local persistence fails.
+      }
     } catch (err) {
       const msg = err instanceof Error ? err.message : 'Login failed';
       setError(msg);
       throw err;
     } finally {
       setLoading(false);
+      inFlight.current = null;
     }
   }, []);
 
   const register = useCallback(async (params: Parameters<typeof coachRegister>[0]) => {
+    if (inFlight.current) return;
+    inFlight.current = 'register';
     setLoading(true);
     setError(null);
     try {
@@ -99,19 +109,19 @@ export function CoachAuthProvider({ children }: { children: ReactNode }) {
       }
 
       setCoach(fullCoach);
-      await AsyncStorage.setItem(TOKEN_KEY, result.token);
-      await AsyncStorage.setItem(COACH_KEY, JSON.stringify(fullCoach));
+      try {
+        await AsyncStorage.setItem(TOKEN_KEY, result.token);
+        await AsyncStorage.setItem(COACH_KEY, JSON.stringify(fullCoach));
+      } catch {
+        // Keep session in memory even if local persistence fails.
+      }
     } catch (err) {
       const msg = err instanceof Error ? err.message : 'Registration failed';
-      console.error('Coach registration failed', {
-        message: msg,
-        phone: params.phone,
-        name: params.name,
-      });
       setError(msg);
       throw err;
     } finally {
       setLoading(false);
+      inFlight.current = null;
     }
   }, []);
 
