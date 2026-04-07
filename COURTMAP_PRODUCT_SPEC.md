@@ -1620,135 +1620,143 @@ model Venue {
 | 3 | `AdminBookingsPage` | Web | Add coach session filter alongside existing court bookings |
 
 
-Add a new section "16. Trust and Safety — Phase 1" 
-to COURTMAP_PRODUCT_SPEC.md before the Appendix.
-Update changelog to v1.2, April 6, 2026.
+Replace Section 16 in COURTMAP_PRODUCT_SPEC.md 
+with the following. Update changelog to v1.2.
 
 ---
 
 SECTION 16 — Trust and Safety (Phase 1)
 
-Simple rules only. More can be added later.
+CourtMap brand promise: 100% trusted platform.
+All reviews are from verified, real players 
+who completed real sessions.
 
 ---
 
-16.1 OTP phone verification
+16.1 Phone verification — triggered at first review
 
-Required before:
-- A player can make their first coach session booking
-- A coach profile becomes visible in search results
+OTP verification is NOT required at signup or 
+booking. It is triggered the first time a player 
+tries to submit a rating.
 
-Implementation:
-- Reuse the same OTP flow for both player and coach 
-  registration (SMS to phone number, 6-digit code, 
-  expires in 5 minutes)
-- Add to UserProfile:
-    phoneVerified       Boolean   @default(false)
-    phoneVerifiedAt     DateTime?
-- Add to Coach model:
-    phoneVerified       Boolean   @default(false)
-    phoneVerifiedAt     DateTime?
-- Block POST /api/sessions if 
-  UserProfile.phoneVerified = false
-- Block coach profile from appearing in 
-  GET /api/coaches search results if 
-  Coach.phoneVerified = false
-- Unverified coach sees banner in app:
-  "Verify your phone number to make your 
-   profile visible to players."
+Flow:
+1. Player completes a session and taps 
+   "Submit rating"
+2. If UserProfile.phoneVerified = false, 
+   intercept before saving the review and 
+   show a modal:
+
+   ┌──────────────────────────────────────┐
+   │  CourtMap is a 100% trusted          │
+   │  platform.                           │
+   │                                      │
+   │  Verify your phone number so your    │
+   │  review can be published and help    │
+   │  other players find great coaches.   │
+   │                                      │
+   │  [Send verification code]            │
+   │  ── or ──                            │
+   │  [Skip for now]                      │
+   └──────────────────────────────────────┘
+
+3. Player enters their 6-digit SMS code
+4. On success: phoneVerified = true, 
+   review is saved and enters the normal 
+   3-session visibility queue (Section 16.3)
+5. If player taps "Skip for now": 
+   review is saved privately but will NOT 
+   become public until phone is verified, 
+   even after 3 sessions. Player sees note:
+   "Your review is saved but won't be 
+    visible until you verify your phone. 
+    Verify now →"
+
+For all future reviews from this player: 
+no OTP prompt — already verified.
+
+Add to UserProfile:
+  phoneVerified      Boolean   @default(false)
+  phoneVerifiedAt    DateTime?
+
+Rule on GET /api/coaches/[id]/reviews:
+  Only return reviews where 
+  isPublic = true AND 
+  UserProfile.phoneVerified = true
 
 ---
 
-16.2 Booking limit — max 3 coaching hours per day 
-per player
+16.2 Booking limit — max 3 coaching hours 
+per player per day
 
-A player cannot book more than 3 hours of coaching 
-in a single calendar day across all coaches.
+A player cannot book more than 3 hours of 
+coaching in a single calendar day across 
+all coaches.
 
-Implementation:
-- On POST /api/sessions, check total duration of 
-  confirmed + pending coach sessions for this 
-  userId on the requested date
-- If total would exceed 3 hours, reject with 400:
+On POST /api/sessions, check total confirmed 
++ pending session hours for this userId on 
+the requested date. Reject if total would 
+exceed 3 hours:
   "You can only book up to 3 hours of coaching 
    per day. You have [N] hour(s) booked on 
-   this date."
-- Count sessions with status: pending, 
-  payment_submitted, or paid
-- Cancelled sessions do not count toward the limit
+   [date]."
+
+Cancelled sessions do not count toward the limit.
 
 ---
 
-16.3 Rating eligibility — 3 completed sessions 
-required
+16.3 Rating visibility — 3 completed sessions 
+required before reviews go public
 
-A player cannot leave a visible public rating for 
-a coach until they have completed 3 sessions 
-with that coach.
+Player submits ratings freely after each session. 
+Reviews are private (visible only to the player 
+and the coach) until the player has completed 
+3 sessions with that coach AND their phone 
+is verified.
 
-Rules:
-- "Completed" = session paymentStatus is paid 
-  AND session is marked complete
-- Before 3 completed sessions:
-  - Player CAN submit a rating after each session 
-    (both player and coach can see it privately)
-  - Rating is NOT visible to other players yet
-  - RateSessionScreen shows note:
-    "Your rating is saved. It will be visible to 
-     other players after you complete 3 sessions 
-     with this coach. [N] of 3 completed."
-- After 3rd completed session:
+After both conditions are met:
   - All previously submitted ratings for this 
-    coach by this player become public immediately
-  - All future ratings are public immediately
-- Each session can only be rated once, 
-  no editing after submission
+    coach become public at once
+  - All future ratings from this player for 
+    this coach are public immediately
 
-Add to CoachReview model:
-  isPublic     Boolean   @default(false)
-  // false until player has 3 completed sessions 
-  // with this coach
+Add to CoachReview:
+  isPublic  Boolean  @default(false)
 
-Add to SessionParticipant model:
-  sessionNumberWithCoach  Int
-  // auto-calculated at session creation:
-  // count of prior completed sessions between 
-  // this userId and coachId + 1
+Public condition (both must be true):
+  1. Player has >= 3 completed paid sessions 
+     with this coach
+  2. UserProfile.phoneVerified = true
 
-Logic on session completion:
-  When a session is marked complete for a player:
-  1. Increment sessionNumberWithCoach
-  2. If this player now has >= 3 completed sessions 
-     with this coach, set isPublic = true on ALL 
-     their CoachReview records for this coach
+RateSessionScreen — before 3 sessions:
+  Show the rating form normally so the player 
+  feels heard. Below the submit button show:
+  "Your review will be visible to other players 
+   after your 3rd session with this coach. 
+   [N of 3 completed]"
 
-GET /api/coaches/[id]/reviews:
-  Return only reviews where isPublic = true
-  (private reviews are never sent to other players)
+Coach profile (other players view):
+  GET /api/coaches/[id]/reviews returns only 
+  isPublic = true reviews.
 
-GET /api/coaches/[id] (coach's own profile view):
-  Return all reviews including isPublic = false, 
-  clearly labelled as "pending — visible after 
-  3 sessions"
+Coach's own view (CoachSessionDetailScreen):
+  Shows all reviews including private ones, 
+  labelled "Private — visible after player's 
+  3rd session".
 
 ---
-
-Add to Phase 1 checklist:
-  - OTP verification for player and coach 
-    registration
-  - Gate coach search visibility on 
-    Coach.phoneVerified
-  - Gate player booking on 
-    UserProfile.phoneVerified
 
 Add to Phase 2 checklist:
   - Booking limit: max 3 coaching hours per 
     calendar day per player
 
 Add to Phase 6 checklist:
-  - Rating visibility: isPublic logic, 
-    3-session threshold, bulk publish on 
-    3rd completion
+  - OTP verification modal on first review 
+    submission
+  - isPublic logic: phone verified + 3 sessions 
+    threshold, bulk publish when both met
+  - "Skip for now" path: review saved privately, 
+    verify prompt shown on coach profile and 
+    in player profile settings
   - Coach private review view in 
     CoachSessionDetailScreen
 
@@ -1756,10 +1764,10 @@ Add to Phase 6 checklist:
 
 Changelog v1.2 — April 6, 2026:
 - Added Section 16: Trust and Safety (Phase 1)
-- OTP phone verification required for players 
-  to book and for coaches to appear in search
+- CourtMap brand promise: 100% trusted platform
+- OTP verification triggered at first review 
+  submission, not at signup
+- Reviews require phone verified + 3 completed 
+  sessions before becoming public
 - Player booking capped at 3 coaching hours 
   per day
-- Ratings require 3 completed sessions before 
-  becoming public; player and coach see them 
-  privately in the meantime

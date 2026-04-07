@@ -44,7 +44,10 @@ export default function RootLayout() {
         <CourtMapProvider>
           <StatusBar style="light" />
           <Stack screenOptions={{ headerShown: false }}>
+            <Stack.Screen name="onboarding" />
+            <Stack.Screen name="player-auth" />
             <Stack.Screen name="(tabs)" />
+            <Stack.Screen name="(coach-tabs)" />
             <Stack.Screen
               name="venue/[id]"
               options={{

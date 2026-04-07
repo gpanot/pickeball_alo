@@ -8,9 +8,9 @@ import {
   pickSlotsForSearch,
   START_HOUR_OPTIONS,
   durationIndexToHalfHourCount,
-} from '@/lib/formatters';
+} from '@/mobile/lib/formatters';
 import { useCourtMap } from '@/context/CourtMapContext';
-import type { VenueResult } from '@/lib/types';
+import type { VenueResult } from '@/mobile/lib/types';
 
 export default function ResultsRoute() {
   const ctx = useCourtMap();

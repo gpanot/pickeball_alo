@@ -1,6 +1,5 @@
 generator client {
-  provider = "prisma-client"
-  output   = "../lib/generated/prisma"
+  provider = "prisma-client-js"
 }
 
 datasource db {
@@ -38,6 +37,7 @@ model Venue {
   pricingTables    PricingTable[]
   dateOverrides    DateOverride[]
   payments         VenuePayment[]
+  coachLinks       CoachCourtLink[]
   createdAt        DateTime        @default(now())
   updatedAt        DateTime        @updatedAt
 }
@@ -150,7 +150,223 @@ model UserProfile {
   id          String   @id @default(cuid())
   name        String
   phone       String   @unique
+  passwordHash String?
   savedVenues String[]
   createdAt   DateTime @default(now())
   updatedAt   DateTime @updatedAt
+}
+
+// ─── Coach Marketplace Models ───────────────────────────────────────────────
+
+model Coach {
+  id                  String              @id @default(cuid())
+  name                String
+  phone               String              @unique
+  email               String?             @unique
+  passwordHash        String
+  phoneVerified       Boolean             @default(false)
+  photo               String?
+  bio                 String?
+  certifications      String[]
+  specialties         String[]
+  languages           String[]
+  focusLevels         String[]
+  groupSizes          String[]
+  experienceBand      String?
+  yearsExperience     Int?
+  responseHint        String?
+  ratingOverall       Float?
+  ratingOnTime        Float?
+  ratingFriendly      Float?
+  ratingProfessional  Float?
+  ratingRecommend     Float?
+  reviewCount         Int                 @default(0)
+  isActive            Boolean             @default(true)
+  isProfilePublic     Boolean             @default(true)
+
+  subscriptionPlan    String              @default("trial")
+  subscriptionExpires DateTime?
+  trialBookingsUsed   Int                 @default(0)
+
+  hourlyRate1on1      Int
+  hourlyRateGroup     Int?
+  maxGroupSize        Int                 @default(4)
+
+  cancellationHours   Int                 @default(24)
+  creditExpiryDays    Int                 @default(90)
+
+  bankName            String?
+  bankAccountName     String?
+  bankAccountNumber   String?
+  bankBin             String?
+
+  /// Incremented each time coach flags ANY session; gate at 3
+  paymentFlagCount    Int                 @default(0)
+
+  courtLinks          CoachCourtLink[]
+  availability        CoachAvailability[]
+  sessions            CoachSession[]
+  creditPacks         CreditPack[]
+  credits             Credit[]
+  reviews             CoachReview[]
+  invitesReceived     CoachVenueInvite[]
+
+  createdAt           DateTime            @default(now())
+  updatedAt           DateTime            @updatedAt
+}
+
+model CoachCourtLink {
+  id        String  @id @default(cuid())
+  coachId   String
+  coach     Coach   @relation(fields: [coachId], references: [id], onDelete: Cascade)
+  venueId   String
+  venue     Venue   @relation(fields: [venueId], references: [id], onDelete: Cascade)
+  courtIds  String[]
+  isActive  Boolean @default(true)
+
+  @@unique([coachId, venueId])
+  @@index([coachId])
+  @@index([venueId])
+}
+
+model CoachAvailability {
+  id        String  @id @default(cuid())
+  coachId   String
+  coach     Coach   @relation(fields: [coachId], references: [id], onDelete: Cascade)
+  dayOfWeek Int?
+  date      String?
+  startTime String
+  endTime   String
+  venueId   String
+  isBlocked Boolean @default(false)
+
+  @@index([coachId])
+  @@index([coachId, dayOfWeek])
+  @@index([coachId, date])
+}
+
+model CoachSession {
+  id              String               @id @default(cuid())
+  coachId         String
+  coach           Coach                @relation(fields: [coachId], references: [id])
+  venueId         String
+  venueName       String
+  courtName       String?
+  date            String
+  startTime       String
+  endTime         String
+  sessionType     String
+  maxPlayers      Int                  @default(1)
+  /// confirmed | completed | canceled
+  status          String               @default("confirmed")
+
+  coachFee        Int
+  courtFee        Int
+  totalPerPlayer  Int
+
+  paymentMethod   String?
+  paymentStatus   String               @default("pending")
+
+  /// Per-session: when coach flagged payment not received on THIS session
+  paymentFlaggedAt DateTime?
+
+  slotIds         String[]
+
+  participants    SessionParticipant[]
+
+  createdAt       DateTime             @default(now())
+  updatedAt       DateTime             @updatedAt
+
+  @@index([coachId])
+  @@index([coachId, date])
+  @@index([venueId])
+}
+
+model SessionParticipant {
+  id              String       @id @default(cuid())
+  sessionId       String
+  session         CoachSession @relation(fields: [sessionId], references: [id], onDelete: Cascade)
+  userId          String
+  userName        String
+  userPhone       String
+  amountDue       Int
+  paymentMethod   String?
+  paymentStatus   String       @default("pending")
+  paymentProofUrl String?
+  paidAt          DateTime?
+  creditId        String?
+
+  @@unique([sessionId, userId])
+  @@index([sessionId])
+  @@index([userId])
+}
+
+model CreditPack {
+  id              String  @id @default(cuid())
+  coachId         String
+  coach           Coach   @relation(fields: [coachId], references: [id], onDelete: Cascade)
+  name            String
+  creditCount     Int
+  price           Int
+  discountPercent Int?
+  isActive        Boolean @default(true)
+
+  @@index([coachId])
+}
+
+model Credit {
+  id               String   @id @default(cuid())
+  coachId          String
+  coach            Coach    @relation(fields: [coachId], references: [id])
+  userId           String
+  userName         String
+  userPhone        String
+  creditPackId     String?
+  totalCredits     Int
+  remainingCredits Int
+  pricePerCredit   Int
+  totalPaid        Int
+  paymentProofUrl  String?
+  paymentStatus    String   @default("pending")
+  expiresAt        DateTime
+  createdAt        DateTime @default(now())
+  updatedAt        DateTime @updatedAt
+
+  @@index([coachId, userId])
+  @@index([userId])
+}
+
+model CoachReview {
+  id                 String   @id @default(cuid())
+  coachId            String
+  coach              Coach    @relation(fields: [coachId], references: [id], onDelete: Cascade)
+  sessionId          String?
+  userId             String
+  userName           String
+  ratingOnTime       Int
+  ratingFriendly     Int
+  ratingProfessional Int
+  ratingRecommend    Int
+  ratingOverall      Float
+  comment            String?
+  isPublic           Boolean  @default(false)
+  createdAt          DateTime @default(now())
+
+  @@index([coachId])
+  @@index([userId])
+}
+
+model CoachVenueInvite {
+  id          String    @id @default(cuid())
+  coachId     String
+  coach       Coach     @relation(fields: [coachId], references: [id], onDelete: Cascade)
+  venueId     String
+  invitedBy   String
+  status      String    @default("pending")
+  createdAt   DateTime  @default(now())
+  respondedAt DateTime?
+
+  @@unique([coachId, venueId])
+  @@index([coachId])
+  @@index([venueId])
 }

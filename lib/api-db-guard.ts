@@ -21,10 +21,11 @@ export function guardDatabaseOr503(): NextResponse | null {
 export function prismaRouteErrorResponse(context: string, err: unknown): NextResponse {
   console.error(`[api-db] ${context}`, err);
   const detail = err instanceof Error ? err.message : String(err);
+  const expose = process.env.NODE_ENV !== 'production';
   return NextResponse.json(
     {
       error: 'database_error',
-      detail,
+      ...(expose ? { detail } : {}),
     },
     { status: 500 },
   );

@@ -15,8 +15,8 @@ import {
   getVenue,
   getBookings,
   cancelBooking,
-} from '@/lib/api';
-import { bookingSlotsToSelectedKeys } from '@/lib/booking-slot-keys';
+} from '@/mobile/lib/api';
+import { bookingSlotsToSelectedKeys } from '@/mobile/lib/booking-slot-keys';
 import {
   getNextDays,
   toLocalDateKey,
@@ -24,12 +24,12 @@ import {
   START_HOUR_OPTIONS,
   durationIndexToHalfHourCount,
   pickSlotsForSearch,
-} from '@/lib/formatters';
-import type { VenueResult, BookingResult, SortMode, ResultsFlowPillContext } from '@/lib/types';
-import { darkTheme } from '@/lib/theme';
+} from '@/mobile/lib/formatters';
+import type { VenueResult, BookingResult, SortMode, ResultsFlowPillContext } from '@/mobile/lib/types';
+import { darkTheme } from '@/mobile/lib/theme';
 import { useAsyncStorage } from '@/hooks/useAsyncStorage';
-import { mapDebug } from '@/lib/map-debug';
-import { syncVenues as syncVenueCache, getCachedVenue } from '@/lib/venue-cache';
+import { mapDebug } from '@/mobile/lib/map-debug';
+import { syncVenues as syncVenueCache, getCachedVenue } from '@/mobile/lib/venue-cache';
 
 function generateId(): string {
   return 'u_' + Math.random().toString(36).slice(2) + Date.now().toString(36);
@@ -129,26 +129,38 @@ function useCourtMapInner() {
 
     let cancelled = false;
     void (async () => {
-      try {
-        const loaded = await Promise.all(missing.map((id) => getVenue(id, dateStr)));
-        if (cancelled) return;
-        setVenues((prev) => {
-          const byId = new Map(prev.map((v) => [v.id, v]));
-          let changed = false;
-          for (const v of loaded) {
-            if (!v?.id) continue;
-            if (!byId.has(v.id)) {
-              byId.set(v.id, v);
-              changed = true;
-            }
-          }
-          if (!changed) return prev;
-          return Array.from(byId.values());
-        });
-      } catch (err) {
-        console.error('Failed to hydrate saved courts:', err);
-        missing.forEach((id) => hydratedSavedRef.current.delete(id));
+      const settled = await Promise.allSettled(missing.map((id) => getVenue(id, dateStr)));
+      if (cancelled) return;
+
+      const loaded: VenueResult[] = [];
+      let failedCount = 0;
+      for (const r of settled) {
+        if (r.status === 'fulfilled') {
+          loaded.push(r.value);
+        } else {
+          failedCount += 1;
+        }
       }
+
+      if (failedCount > 0) {
+        // Keep IDs marked as hydrated to avoid repeated noisy retries for stale/removed venues.
+        console.warn(`Skipped ${failedCount} saved venue(s) that could not be hydrated.`);
+      }
+
+      if (loaded.length === 0) return;
+      setVenues((prev) => {
+        const byId = new Map(prev.map((v) => [v.id, v]));
+        let changed = false;
+        for (const v of loaded) {
+          if (!v?.id) continue;
+          if (!byId.has(v.id)) {
+            byId.set(v.id, v);
+            changed = true;
+          }
+        }
+        if (!changed) return prev;
+        return Array.from(byId.values());
+      });
     })();
 
     return () => { cancelled = true; };
@@ -185,7 +197,8 @@ function useCourtMapInner() {
       setSearchDisplayCount(searchPageSize);
       setVenues(results.slice(0, searchPageSize));
     } catch (err) {
-      console.error('Search failed:', err);
+      // Keep the UI usable when backend search is temporarily unavailable.
+      console.warn('Search venues failed; showing empty results.');
       setSearchTotalResults([]);
       setVenues([]);
     } finally {
@@ -243,7 +256,7 @@ function useCourtMapInner() {
         });
       } catch (err) {
         mapDebug('venues_fetch_error', { reason: opts.reason, error: String(err) });
-        console.error('Explore map load failed:', err);
+        console.warn('Explore map fetch failed; keeping app responsive.');
         setVenues([]);
       } finally {
         setLoading(false);
@@ -415,11 +428,14 @@ function useCourtMapInner() {
   );
 
   const handleSaveProfile = useCallback(
-    (name: string, phone: string) => {
+    (name: string, phone: string, id?: string) => {
+      if (id?.trim()) {
+        void setUserId(id.trim());
+      }
       void setUserName(name);
       void setUserPhone(phone);
     },
-    [setUserName, setUserPhone],
+    [setUserId, setUserName, setUserPhone],
   );
 
   const handleSavedBookConfirm = useCallback(async () => {
@@ -555,6 +571,21 @@ function useCourtMapInner() {
     goBookTab();
   }, [goBookTab]);
 
+  const logoutPlayer = useCallback(() => {
+    // Reset local player identity/state for clean end-to-end testing.
+    void setUserId(generateId());
+    void setUserName('');
+    void setUserPhone('');
+    void setSavedIds([]);
+    setBookings([]);
+    setSelectedSlots(new Set());
+    setBookingBeingEdited(null);
+    setSavedViaResultsFlow(false);
+    setSavedSearchOpen(false);
+    setSavedBookVenue(null);
+    router.replace('/onboarding');
+  }, [router, setSavedIds, setUserId, setUserName, setUserPhone]);
+
   return useMemo(() => ({
     t,
     segments,
@@ -623,6 +654,7 @@ function useCourtMapInner() {
     openSavedFromResultsFlow,
     onResultsFlowPrimary,
     resultsFlowContext,
+    logoutPlayer,
     goBookTab,
     backFromResults,
     backFromSavedOrBookings,
@@ -642,7 +674,7 @@ function useCourtMapInner() {
     handleCancelBooking, handleSaveProfile, persistPlayerProfileFromBooking, handleSavedBookConfirm,
     handleDetailAvailabilityDateChange, mapUserLoc, mapGeoInitDone,
     goMapsTab, goSavedTab, goMyBookingsTab, openSavedFromResultsFlow,
-    onResultsFlowPrimary, resultsFlowContext, goBookTab, backFromResults,
+    onResultsFlowPrimary, resultsFlowContext, logoutPlayer, goBookTab, backFromResults,
     backFromSavedOrBookings, backFromSavedInResultsFlow, backFromProfile,
   ]);
 }

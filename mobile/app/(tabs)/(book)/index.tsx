@@ -7,7 +7,7 @@ import SearchFormFields from '@/components/search/SearchFormFields';
 import MapsExploreSearch from '@/components/maps/MapsExploreSearch';
 import { SearchIcon } from '@/components/Icons';
 import { useCourtMap } from '@/context/CourtMapContext';
-import type { VenueResult } from '@/lib/types';
+import type { VenueResult } from '@/mobile/lib/types';
 
 export default function SearchRoute() {
   const router = useRouter();

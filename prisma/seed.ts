@@ -13,7 +13,7 @@ import {
   parseLegacyTables,
 } from '../lib/json-venue-pricing';
 import { computeCourtSlots } from '../lib/venue-slots';
-import { PrismaClient } from '../lib/generated/prisma/client.js';
+import { PrismaClient } from '@prisma/client';
 
 const DEFAULT_ADMIN_PIN = '1234';
 const adminPinHash = bcrypt.hashSync(DEFAULT_ADMIN_PIN, 10);

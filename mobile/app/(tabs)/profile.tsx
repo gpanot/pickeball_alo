@@ -5,10 +5,13 @@ import {
   Pressable,
   TextInput,
   ScrollView,
+  Alert,
   StyleSheet,
 } from 'react-native';
 import { useRouter } from 'expo-router';
-import { BackIcon, CalendarIcon, HeartIcon } from '@/components/Icons';
+import AsyncStorage from '@react-native-async-storage/async-storage';
+import { BackIcon, CalendarIcon, HeartIcon, CoachIcon } from '@/components/Icons';
+import { Ionicons } from '@expo/vector-icons';
 import ScreenTopBar from '@/components/ui/ScreenTopBar';
 import { useCourtMap } from '@/context/CourtMapContext';
 
@@ -23,11 +26,24 @@ export default function ProfileRoute() {
     handleSaveProfile,
     loadBookings,
     goSavedTab,
+    logoutPlayer,
   } = ctx;
 
   const [name, setName] = useState(userName);
   const [phone, setPhone] = useState(userPhone);
   const [saved, setSaved] = useState(false);
+
+  const resetAllLocalSession = async () => {
+    await AsyncStorage.multiRemove([
+      'cm_saved',
+      'cm_userId',
+      'cm_userName',
+      'cm_userPhone',
+      'coach_jwt_token',
+      'coach_profile',
+    ]);
+    logoutPlayer();
+  };
 
   useEffect(() => {
     setName(userName);
@@ -111,6 +127,56 @@ export default function ProfileRoute() {
           >
             <HeartIcon color={t.accent} />
             <Text style={[styles.linkText, { color: t.text }]}>Saved Courts</Text>
+          </Pressable>
+          <Pressable
+            onPress={() => router.push('/(tabs)/(coach)/my-credits' as any)}
+            style={[styles.link, { backgroundColor: t.bgCard, borderColor: t.border }]}
+          >
+            <Ionicons name="wallet-outline" size={20} color={t.accent} />
+            <Text style={[styles.linkText, { color: t.text }]}>My Credits</Text>
+          </Pressable>
+          <Pressable
+            onPress={() => router.push('/(tabs)/(coach)' as any)}
+            style={[styles.link, { backgroundColor: t.bgCard, borderColor: t.border }]}
+          >
+            <CoachIcon size={20} color={t.accent} />
+            <Text style={[styles.linkText, { color: t.text }]}>Find a Coach</Text>
+          </Pressable>
+          <Pressable
+            onPress={() =>
+              Alert.alert(
+                'Log out player',
+                'This clears your local player profile and starts a fresh anonymous session.',
+                [
+                  { text: 'Cancel', style: 'cancel' },
+                  { text: 'Log out', style: 'destructive', onPress: logoutPlayer },
+                ],
+              )
+            }
+            style={[styles.link, { backgroundColor: t.bgCard, borderColor: t.red }]}
+          >
+            <Text style={[styles.linkText, { color: t.red }]}>Log out Player</Text>
+          </Pressable>
+          <Pressable
+            onPress={() =>
+              Alert.alert(
+                'Reset test session',
+                'This clears BOTH player and coach local session data on this device.',
+                [
+                  { text: 'Cancel', style: 'cancel' },
+                  {
+                    text: 'Reset all',
+                    style: 'destructive',
+                    onPress: () => {
+                      void resetAllLocalSession();
+                    },
+                  },
+                ],
+              )
+            }
+            style={[styles.link, { backgroundColor: t.bgCard, borderColor: t.orange }]}
+          >
+            <Text style={[styles.linkText, { color: t.orange }]}>Reset Test Session (All)</Text>
           </Pressable>
         </View>
       </View>

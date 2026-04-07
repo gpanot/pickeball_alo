@@ -1,5 +1,5 @@
 import { NextRequest, NextResponse } from 'next/server';
-import type { Prisma } from '@/lib/generated/prisma/client';
+import type { Prisma } from '@prisma/client';
 import { prisma } from '@/lib/prisma';
 import { requireAdminVenue } from '@/lib/admin-auth';
 import { autoCancelExpiredBookings } from '@/lib/booking-deadline';

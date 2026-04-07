@@ -1,4 +1,4 @@
-import { PrismaClient } from '@/lib/generated/prisma/client';
+import { PrismaClient } from '@prisma/client';
 
 /**
  * Single PrismaClient per serverless isolate (Vercel / Node).
@@ -9,3 +9,5 @@ const globalForPrisma = globalThis as unknown as { prisma?: PrismaClient };
 export const prisma: PrismaClient = globalForPrisma.prisma ?? new PrismaClient();
 
 globalForPrisma.prisma = prisma;
+
+export default prisma;

@@ -1,7 +1,7 @@
 import React, { memo, useMemo } from 'react';
 import { View, Text, Pressable, StyleSheet } from 'react-native';
 import { useSafeAreaInsets } from 'react-native-safe-area-context';
-import { SearchIcon, PinIcon, HeartIcon, CalendarIcon } from '@/components/Icons';
+import { SearchIcon, PinIcon, HeartIcon, CalendarIcon, CoachIcon } from '@/components/Icons';
 import type { ThemeTokens } from '@/lib/theme';
 
 interface BottomNavProps {
@@ -9,10 +9,12 @@ interface BottomNavProps {
   mapsActive: boolean;
   savedActive: boolean;
   bookingsActive: boolean;
+  coachActive?: boolean;
   onBook: () => void;
   onMaps: () => void;
   onSaved: () => void;
   onMyBookings: () => void;
+  onCoach?: () => void;
   savedCount: number;
   t: ThemeTokens;
 }
@@ -22,10 +24,12 @@ function BottomNav({
   mapsActive,
   savedActive,
   bookingsActive,
+  coachActive,
   onBook,
   onMaps,
   onSaved,
   onMyBookings,
+  onCoach,
   savedCount,
   t,
 }: BottomNavProps) {
@@ -74,6 +78,14 @@ function BottomNav({
             </View>
           )}
         </Pressable>
+        {onCoach && (
+          <Pressable onPress={onCoach} style={itemBase}>
+            <View style={{ opacity: coachActive ? 1 : 0.7 }}>
+              <CoachIcon size={22} color={coachActive ? t.accent : t.textSec} />
+            </View>
+            <Text style={[styles.label, { color: coachActive ? t.accent : t.textSec }]}>Coach</Text>
+          </Pressable>
+        )}
         <Pressable onPress={onMyBookings} style={itemBase}>
           <View style={{ opacity: bookingsActive ? 1 : 0.7 }}>
             <CalendarIcon color={bookingsActive ? t.accent : t.textSec} />

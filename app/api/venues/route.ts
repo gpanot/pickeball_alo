@@ -1,5 +1,5 @@
 import { NextRequest, NextResponse } from 'next/server';
-import type { Prisma } from '@/lib/generated/prisma/client';
+import type { Prisma } from '@prisma/client';
 import { prisma } from '@/lib/prisma';
 import { venueSearchTokensWhere } from '@/lib/venue-search';
 import { sortSlotsByTime } from '@/lib/formatters';

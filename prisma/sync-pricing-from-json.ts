@@ -6,7 +6,7 @@
 import { config } from 'dotenv';
 import * as fs from 'node:fs';
 import * as path from 'node:path';
-import { PrismaClient } from '../lib/generated/prisma/client.js';
+import { PrismaClient } from '@prisma/client';
 import { computeCourtSlots } from '../lib/venue-slots';
 import {
   type CourtJsonRow,
