@@ -470,18 +470,22 @@ export async function saveCoachAvailability(
   coachId: string,
   token: string,
   availability: Array<{
-    dayOfWeek: number;
+    dayOfWeek: number | null;
     startTime: string;
     endTime: string;
-    venueId: string;
-    date: null;
+    venueId?: string | null;
+    date: string | null;
     isBlocked: boolean;
   }>,
 ): Promise<void> {
+  const payload = availability.map((a) => ({
+    ...a,
+    venueId: a.venueId ?? null,
+  }));
   const res = await fetch(`${BASE}/api/coaches/${coachId}/availability`, {
     method: 'PUT',
     headers: authHeaders(token),
-    body: JSON.stringify({ availability }),
+    body: JSON.stringify({ availability: payload }),
   });
   if (!res.ok) {
     const err = await res.json().catch(() => ({}));

@@ -50,7 +50,7 @@ export interface CoachAvailabilityResult {
   date: string | null;
   startTime: string;
   endTime: string;
-  venueId: string;
+  venueId: string | null;
   isBlocked: boolean;
 }
 

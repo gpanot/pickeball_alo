@@ -7,7 +7,7 @@ type AvailabilityItem = {
   date?: string;
   startTime: string;
   endTime: string;
-  venueId: string;
+  venueId?: string | null;
   isBlocked?: boolean;
 };
 
@@ -63,17 +63,15 @@ export async function PUT(
     );
   }
 
-  const venueIds = [...new Set(body.availability.map((a) => a.venueId))];
-  if (venueIds.some((vid) => !vid)) {
-    return NextResponse.json({ error: 'Each item needs venueId' }, { status: 400 });
-  }
-
-  const foundVenues = await prisma.venue.findMany({
-    where: { id: { in: venueIds } },
-    select: { id: true },
-  });
-  if (foundVenues.length !== venueIds.length) {
-    return NextResponse.json({ error: 'One or more venues not found' }, { status: 400 });
+  const venueIds = [...new Set(body.availability.map((a) => a.venueId).filter(Boolean))] as string[];
+  if (venueIds.length > 0) {
+    const foundVenues = await prisma.venue.findMany({
+      where: { id: { in: venueIds } },
+      select: { id: true },
+    });
+    if (foundVenues.length !== venueIds.length) {
+      return NextResponse.json({ error: 'One or more venues not found' }, { status: 400 });
+    }
   }
 
   await prisma.$transaction(async (tx) => {
@@ -86,7 +84,7 @@ export async function PUT(
           date: a.date ?? null,
           startTime: a.startTime,
           endTime: a.endTime,
-          venueId: a.venueId,
+          venueId: a.venueId ?? null,
           isBlocked: a.isBlocked ?? false,
         })),
       });

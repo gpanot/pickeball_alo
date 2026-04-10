@@ -151,6 +151,7 @@ model UserProfile {
   name        String
   phone       String   @unique
   passwordHash String?
+  photo       String?
   savedVenues String[]
   createdAt   DateTime @default(now())
   updatedAt   DateTime @updatedAt
@@ -237,7 +238,7 @@ model CoachAvailability {
   date      String?
   startTime String
   endTime   String
-  venueId   String
+  venueId   String?
   isBlocked Boolean @default(false)
 
   @@index([coachId])

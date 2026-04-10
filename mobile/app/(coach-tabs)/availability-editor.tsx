@@ -1,58 +1,110 @@
-import React, { useCallback, useEffect, useMemo, useState } from 'react';
+import React, { useCallback, useEffect, useState } from 'react';
 import {
   View,
   Text,
   Pressable,
   ScrollView,
-  TextInput,
+  Switch,
+  Modal,
+  FlatList,
   StyleSheet,
   ActivityIndicator,
   Alert,
+  TextInput,
+  Platform,
 } from 'react-native';
 import { SafeAreaView } from 'react-native-safe-area-context';
 import { useRouter } from 'expo-router';
+import { Ionicons } from '@expo/vector-icons';
 import { spacing, fontSize, borderRadius } from '@/mobile/lib/theme';
 import { darkTheme as t } from '@/mobile/lib/theme';
 import { useCoachAuth } from '@/context/CoachAuthContext';
-import { SectionHeader, EmptyState, StatusChip, RatingBar } from '@/components/coach';
+import { EmptyState } from '@/components/coach';
 import {
   getCoachAvailability,
-  listCoachCourts,
   saveCoachAvailability,
 } from '@/mobile/lib/coach-api';
 import type { CoachAvailabilityResult } from '@/mobile/lib/coach-types';
 
-/** Monday .. Sunday as JS weekday: Mon=1 … Sat=6, Sun=0 */
-const WEEK_DAYS: { label: string; dow: number }[] = [
-  { label: 'Mon', dow: 1 },
-  { label: 'Tue', dow: 2 },
-  { label: 'Wed', dow: 3 },
-  { label: 'Thu', dow: 4 },
-  { label: 'Fri', dow: 5 },
-  { label: 'Sat', dow: 6 },
-  { label: 'Sun', dow: 0 },
+const WEEK_DAYS: { label: string; shortLabel: string; dow: number }[] = [
+  { label: 'Monday', shortLabel: 'Mon', dow: 1 },
+  { label: 'Tuesday', shortLabel: 'Tue', dow: 2 },
+  { label: 'Wednesday', shortLabel: 'Wed', dow: 3 },
+  { label: 'Thursday', shortLabel: 'Thu', dow: 4 },
+  { label: 'Friday', shortLabel: 'Fri', dow: 5 },
+  { label: 'Saturday', shortLabel: 'Sat', dow: 6 },
+  { label: 'Sunday', shortLabel: 'Sun', dow: 0 },
 ];
 
-type TimeBlock = {
-  id: string;
-  startTime: string;
-  endTime: string;
-  venueId: string;
-};
+const TIME_OPTIONS: string[] = [];
+for (let h = 5; h <= 23; h++) {
+  TIME_OPTIONS.push(`${String(h).padStart(2, '0')}:00`);
+  if (h < 23) TIME_OPTIONS.push(`${String(h).padStart(2, '0')}:30`);
+}
 
-type VenueOption = { venueId: string; name: string };
+type TimeBlock = { id: string; startTime: string; endTime: string };
+type HolidayPeriod = { id: string; startDate: string; endDate: string };
 
 function randomId(): string {
   return `${Date.now()}-${Math.random().toString(36).slice(2, 9)}`;
 }
 
-function emptyBlock(defaultVenueId: string): TimeBlock {
-  return {
-    id: randomId(),
-    startTime: '09:00',
-    endTime: '12:00',
-    venueId: defaultVenueId,
-  };
+function emptyBlock(): TimeBlock {
+  return { id: randomId(), startTime: '09:00', endTime: '12:00' };
+}
+
+function datesBetween(start: string, end: string): string[] {
+  const dates: string[] = [];
+  const d = new Date(start + 'T00:00:00');
+  const e = new Date(end + 'T00:00:00');
+  if (isNaN(d.getTime()) || isNaN(e.getTime()) || d > e) return dates;
+  const maxDays = 365;
+  let count = 0;
+  while (d <= e && count < maxDays) {
+    const y = d.getFullYear();
+    const m = String(d.getMonth() + 1).padStart(2, '0');
+    const day = String(d.getDate()).padStart(2, '0');
+    dates.push(`${y}-${m}-${day}`);
+    d.setDate(d.getDate() + 1);
+    count++;
+  }
+  return dates;
+}
+
+function collapseBlockedDates(rows: CoachAvailabilityResult[]): HolidayPeriod[] {
+  const blocked = rows
+    .filter((r) => r.isBlocked && r.date)
+    .map((r) => r.date!)
+    .sort();
+  if (blocked.length === 0) return [];
+  const periods: HolidayPeriod[] = [];
+  let start = blocked[0];
+  let prev = blocked[0];
+  for (let i = 1; i < blocked.length; i++) {
+    const cur = blocked[i];
+    const prevDate = new Date(prev + 'T00:00:00');
+    prevDate.setDate(prevDate.getDate() + 1);
+    const nextExpected =
+      prevDate.getFullYear() +
+      '-' +
+      String(prevDate.getMonth() + 1).padStart(2, '0') +
+      '-' +
+      String(prevDate.getDate()).padStart(2, '0');
+    if (cur === nextExpected) {
+      prev = cur;
+    } else {
+      periods.push({ id: randomId(), startDate: start, endDate: prev });
+      start = cur;
+      prev = cur;
+    }
+  }
+  periods.push({ id: randomId(), startDate: start, endDate: prev });
+  return periods;
+}
+
+function todayYMD(): string {
+  const d = new Date();
+  return `${d.getFullYear()}-${String(d.getMonth() + 1).padStart(2, '0')}-${String(d.getDate()).padStart(2, '0')}`;
 }
 
 export default function CoachAvailabilityEditorScreen() {
@@ -60,42 +112,36 @@ export default function CoachAvailabilityEditorScreen() {
   const { coach, token } = useCoachAuth();
   const [loading, setLoading] = useState(true);
   const [saving, setSaving] = useState(false);
-  const [venues, setVenues] = useState<VenueOption[]>([]);
+  const [enabledDays, setEnabledDays] = useState<Record<number, boolean>>({});
   const [blocksByDay, setBlocksByDay] = useState<Record<number, TimeBlock[]>>({});
-  const [picker, setPicker] = useState<{ dow: number; blockId: string } | null>(null);
+  const [holidays, setHolidays] = useState<HolidayPeriod[]>([]);
 
-  const defaultVenueId = venues[0]?.venueId ?? '';
-
-  const loadCourts = useCallback(async () => {
-    if (!coach?.id) return [];
-    const links = await listCoachCourts(coach.id).catch(() => []);
-    return links.map((l) => ({
-      venueId: l.venueId,
-      name: l.venue?.name ?? l.venueId,
-    }));
-  }, [coach?.id]);
+  const [pickerVisible, setPickerVisible] = useState(false);
+  const [pickerTarget, setPickerTarget] = useState<{
+    dow: number;
+    blockId: string;
+    field: 'startTime' | 'endTime';
+  } | null>(null);
 
   const loadAvailability = useCallback(async (): Promise<CoachAvailabilityResult[]> => {
     if (!coach?.id) return [];
     return getCoachAvailability(coach.id).catch(() => []);
   }, [coach?.id]);
 
-
   useEffect(() => {
     let cancelled = false;
     (async () => {
-      if (!coach?.id) {
-        setLoading(false);
-        return;
-      }
+      if (!coach?.id) { setLoading(false); return; }
       setLoading(true);
       try {
-        const [vList, rows] = await Promise.all([loadCourts(), loadAvailability()]);
+        const rows = await loadAvailability();
         if (cancelled) return;
-        setVenues(vList);
+
         const fromApi: Record<number, TimeBlock[]> = {};
+        const enabled: Record<number, boolean> = {};
+
         for (const row of rows) {
-          if (row.date != null) continue;
+          if (row.isBlocked || row.date != null) continue;
           if (row.dayOfWeek == null) continue;
           const dow = row.dayOfWeek;
           if (!fromApi[dow]) fromApi[dow] = [];
@@ -103,114 +149,122 @@ export default function CoachAvailabilityEditorScreen() {
             id: row.id || randomId(),
             startTime: row.startTime,
             endTime: row.endTime,
-            venueId: row.venueId,
           });
+          enabled[dow] = true;
         }
-        const firstVid = vList[0]?.venueId ?? '';
+
         for (const { dow } of WEEK_DAYS) {
-          if (!fromApi[dow]?.length && firstVid) {
-            fromApi[dow] = [emptyBlock(firstVid)];
-          }
+          if (!fromApi[dow]?.length) fromApi[dow] = [emptyBlock()];
+          if (enabled[dow] === undefined) enabled[dow] = true;
         }
+
         setBlocksByDay(fromApi);
+        setEnabledDays(enabled);
+        setHolidays(collapseBlockedDates(rows));
       } finally {
         if (!cancelled) setLoading(false);
       }
     })();
-    return () => {
-      cancelled = true;
-    };
-  }, [coach?.id, loadAvailability, loadCourts]);
+    return () => { cancelled = true; };
+  }, [coach?.id, loadAvailability]);
 
-  useEffect(() => {
-    if (loading || venues.length === 0) return;
-    setBlocksByDay((prev) => {
-      const dv = venues[0]!.venueId;
-      const next = { ...prev };
-      let changed = false;
-      for (const { dow } of WEEK_DAYS) {
-        const blocks = next[dow];
-        if (!blocks || blocks.length === 0) {
-          next[dow] = [emptyBlock(dv)];
-          changed = true;
-        }
-      }
-      return changed ? next : prev;
-    });
-  }, [loading, venues]);
-
-  const venueName = useCallback(
-    (id: string) => venues.find((v) => v.venueId === id)?.name ?? id,
-    [venues],
-  );
-
-  const updateBlock = useCallback((dow: number, blockId: string, patch: Partial<TimeBlock>) => {
-    setBlocksByDay((prev) => {
-      const list = prev[dow] ?? [];
-      return {
-        ...prev,
-        [dow]: list.map((b) => (b.id === blockId ? { ...b, ...patch } : b)),
-      };
-    });
+  const toggleDay = useCallback((dow: number) => {
+    setEnabledDays((prev) => ({ ...prev, [dow]: !prev[dow] }));
   }, []);
 
-  const addBlock = useCallback(
-    (dow: number) => {
-      const dv = defaultVenueId;
-      if (!dv) {
-        Alert.alert('Venues', 'Link a court first.');
-        return;
-      }
-      setBlocksByDay((prev) => ({
-        ...prev,
-        [dow]: [...(prev[dow] ?? []), emptyBlock(dv)],
-      }));
-    },
-    [defaultVenueId],
-  );
+  const updateBlock = useCallback((dow: number, blockId: string, patch: Partial<TimeBlock>) => {
+    setBlocksByDay((prev) => ({
+      ...prev,
+      [dow]: (prev[dow] ?? []).map((b) => (b.id === blockId ? { ...b, ...patch } : b)),
+    }));
+  }, []);
+
+  const addBlock = useCallback((dow: number) => {
+    setBlocksByDay((prev) => ({
+      ...prev,
+      [dow]: [...(prev[dow] ?? []), emptyBlock()],
+    }));
+  }, []);
 
   const removeBlock = useCallback((dow: number, blockId: string) => {
     setBlocksByDay((prev) => {
       const list = (prev[dow] ?? []).filter((b) => b.id !== blockId);
-      const dv = defaultVenueId;
-      return {
-        ...prev,
-        [dow]: list.length > 0 ? list : dv ? [emptyBlock(dv)] : [],
-      };
+      return { ...prev, [dow]: list.length > 0 ? list : [emptyBlock()] };
     });
-  }, [defaultVenueId]);
+  }, []);
+
+  const openPicker = useCallback(
+    (dow: number, blockId: string, field: 'startTime' | 'endTime') => {
+      setPickerTarget({ dow, blockId, field });
+      setPickerVisible(true);
+    },
+    [],
+  );
+
+  const onPickTime = useCallback(
+    (time: string) => {
+      if (pickerTarget) {
+        updateBlock(pickerTarget.dow, pickerTarget.blockId, { [pickerTarget.field]: time });
+      }
+      setPickerVisible(false);
+      setPickerTarget(null);
+    },
+    [pickerTarget, updateBlock],
+  );
+
+  const addHoliday = useCallback(() => {
+    const today = todayYMD();
+    setHolidays((prev) => [...prev, { id: randomId(), startDate: today, endDate: today }]);
+  }, []);
+
+  const updateHoliday = useCallback((id: string, patch: Partial<HolidayPeriod>) => {
+    setHolidays((prev) => prev.map((h) => (h.id === id ? { ...h, ...patch } : h)));
+  }, []);
+
+  const removeHoliday = useCallback((id: string) => {
+    setHolidays((prev) => prev.filter((h) => h.id !== id));
+  }, []);
 
   const onSave = useCallback(async () => {
     if (!coach?.id || !token) {
       Alert.alert('Error', 'Not signed in');
       return;
     }
-    if (venues.length === 0) {
-      Alert.alert('Venues', 'No linked courts. Add a partnership first.');
-      return;
-    }
+
     const availability: {
-      dayOfWeek: number;
+      dayOfWeek: number | null;
       startTime: string;
       endTime: string;
-      venueId: string;
-      date: null;
+      venueId: null;
+      date: string | null;
       isBlocked: boolean;
     }[] = [];
 
     for (const { dow } of WEEK_DAYS) {
+      if (!enabledDays[dow]) continue;
       for (const b of blocksByDay[dow] ?? []) {
-        if (!b.venueId.trim()) {
-          Alert.alert('Validation', `Pick a venue for every block (${WEEK_DAYS.find((d) => d.dow === dow)?.label}).`);
-          return;
-        }
         availability.push({
           dayOfWeek: dow,
           startTime: b.startTime.trim(),
           endTime: b.endTime.trim(),
-          venueId: b.venueId.trim(),
+          venueId: null,
           date: null,
           isBlocked: false,
+        });
+      }
+    }
+
+    for (const h of holidays) {
+      const dates = datesBetween(h.startDate, h.endDate);
+      if (dates.length === 0) continue;
+      for (const d of dates) {
+        availability.push({
+          dayOfWeek: null,
+          startTime: '00:00',
+          endTime: '23:59',
+          venueId: null,
+          date: d,
+          isBlocked: true,
         });
       }
     }
@@ -218,21 +272,17 @@ export default function CoachAvailabilityEditorScreen() {
     setSaving(true);
     try {
       await saveCoachAvailability(coach.id, token, availability);
-      Alert.alert('Saved', 'Weekly availability updated.');
+      Alert.alert('Saved', 'Availability updated.');
     } catch (e) {
       Alert.alert('Save failed', e instanceof Error ? e.message : 'Network error');
     } finally {
       setSaving(false);
     }
-  }, [blocksByDay, coach?.id, token, venues.length]);
+  }, [blocksByDay, coach?.id, enabledDays, holidays, token]);
 
-  const showRatings =
-    coach &&
-    (coach.ratingOverall != null ||
-      coach.ratingOnTime != null ||
-      coach.ratingFriendly != null ||
-      coach.ratingProfessional != null ||
-      coach.ratingRecommend != null);
+  const pickerCurrentValue = pickerTarget
+    ? (blocksByDay[pickerTarget.dow] ?? []).find((b) => b.id === pickerTarget.blockId)?.[pickerTarget.field] ?? ''
+    : '';
 
   if (!coach) {
     return (
@@ -244,247 +294,338 @@ export default function CoachAvailabilityEditorScreen() {
 
   return (
     <SafeAreaView style={[styles.safe, { backgroundColor: t.bg }]} edges={['top']}>
+      <View style={styles.topBar}>
+        <Pressable onPress={() => router.back()} hitSlop={12} style={styles.backBtn}>
+          <Ionicons name="chevron-back" size={22} color={t.accent} />
+          <Text style={[styles.backText, { color: t.accent }]}>Back</Text>
+        </Pressable>
+        <Text style={[styles.topTitle, { color: t.text }]}>Weekly Availability</Text>
+        <Pressable
+          onPress={onSave}
+          disabled={saving || loading}
+          hitSlop={12}
+          style={({ pressed }) => [
+            styles.saveTopBtn,
+            { backgroundColor: t.accent, opacity: saving || pressed ? 0.7 : 1 },
+          ]}
+        >
+          {saving ? (
+            <ActivityIndicator size="small" color={t.bg} />
+          ) : (
+            <Text style={[styles.saveTopText, { color: t.bg }]}>Save</Text>
+          )}
+        </Pressable>
+      </View>
+
       <ScrollView
         style={styles.scroll}
         contentContainerStyle={styles.scrollContent}
         keyboardShouldPersistTaps="handled"
       >
-        <SectionHeader title="Weekly availability" theme={t} />
-
-        {showRatings ? (
-          <View style={[styles.ratingCard, { backgroundColor: t.bgCard, borderColor: t.border }]}>
-            <View style={styles.ratingHeader}>
-              <Text style={[styles.ratingTitle, { color: t.textSec }]}>Coach quality</Text>
-              <StatusChip status={`${coach.reviewCount} reviews`} theme={t} />
-            </View>
-            {coach.ratingOverall != null ? (
-              <RatingBar label="Overall" value={coach.ratingOverall} theme={t} />
-            ) : null}
-          </View>
-        ) : null}
+        <Text style={[styles.subtitle, { color: t.textSec }]}>
+          Applies across all your preferred courts.
+        </Text>
 
         {loading ? (
           <View style={styles.centered}>
             <ActivityIndicator size="large" color={t.accent} />
           </View>
-        ) : venues.length === 0 ? (
-          <EmptyState
-            title="No venues linked"
-            subtitle="Link a court partnership before setting availability."
-            theme={t}
-          />
         ) : (
-          WEEK_DAYS.map(({ label, dow }) => (
-            <View key={dow} style={[styles.dayCard, { backgroundColor: t.bgCard, borderColor: t.border }]}>
-              <Text style={[styles.dayTitle, { color: t.text }]}>{label}</Text>
-              {(blocksByDay[dow] ?? []).map((block) => (
-                <View key={block.id} style={[styles.block, { borderColor: t.border }]}>
-                  <View style={styles.row}>
-                    <View style={styles.timeCol}>
-                      <Text style={[styles.miniLabel, { color: t.textMuted }]}>Start</Text>
-                      <TextInput
-                        value={block.startTime}
-                        onChangeText={(v) => updateBlock(dow, block.id, { startTime: v })}
-                        style={[styles.timeInput, { color: t.text, backgroundColor: t.bgInput, borderColor: t.border }]}
-                        placeholder="09:00"
-                        placeholderTextColor={t.textMuted}
-                      />
-                    </View>
-                    <View style={styles.timeCol}>
-                      <Text style={[styles.miniLabel, { color: t.textMuted }]}>End</Text>
-                      <TextInput
-                        value={block.endTime}
-                        onChangeText={(v) => updateBlock(dow, block.id, { endTime: v })}
-                        style={[styles.timeInput, { color: t.text, backgroundColor: t.bgInput, borderColor: t.border }]}
-                        placeholder="12:00"
-                        placeholderTextColor={t.textMuted}
-                      />
-                    </View>
-                  </View>
-                  <Text style={[styles.miniLabel, { color: t.textMuted }]}>Venue</Text>
-                  <Pressable
-                    onPress={() =>
-                      setPicker((p) =>
-                        p?.dow === dow && p.blockId === block.id ? null : { dow, blockId: block.id },
-                      )
-                    }
-                    style={({ pressed }) => [
-                      styles.venueBtn,
-                      {
-                        backgroundColor: t.bgInput,
-                        borderColor: t.border,
-                        opacity: pressed ? 0.9 : 1,
-                      },
+          <>
+            {/* Weekly schedule */}
+            <View style={[styles.weekCard, { backgroundColor: t.bgCard, borderColor: t.border }]}>
+              {WEEK_DAYS.map(({ shortLabel, dow }, dayIdx) => {
+                const on = enabledDays[dow] !== false;
+                const blocks = blocksByDay[dow] ?? [];
+                return (
+                  <View
+                    key={dow}
+                    style={[
+                      styles.daySection,
+                      dayIdx > 0 && { borderTopWidth: StyleSheet.hairlineWidth, borderTopColor: t.border },
                     ]}
                   >
-                    <Text style={[styles.venueBtnText, { color: t.text }]} numberOfLines={1}>
-                      {venueName(block.venueId)}
-                    </Text>
-                    <Text style={{ color: t.accent, fontSize: fontSize.sm, fontWeight: '700' }}>Choose</Text>
-                  </Pressable>
-                  {picker?.dow === dow && picker.blockId === block.id
-                    ? venues.map((item) => (
-                        <Pressable
-                          key={item.venueId}
-                          onPress={() => {
-                            updateBlock(dow, block.id, { venueId: item.venueId });
-                            setPicker(null);
-                          }}
-                          style={({ pressed }) => [
-                            styles.venueRow,
-                            {
-                              backgroundColor: t.bgSurface,
-                              opacity: pressed ? 0.85 : 1,
-                            },
-                          ]}
-                        >
-                          <Text style={[styles.venueRowText, { color: t.text }]}>{item.name}</Text>
-                        </Pressable>
-                      ))
-                    : null}
-                  <View style={styles.blockActions}>
-                    <Pressable
-                      onPress={() => addBlock(dow)}
-                      style={({ pressed }) => [{ opacity: pressed ? 0.75 : 1 }]}
-                    >
-                      <Text style={{ color: t.accent, fontWeight: '700', fontSize: fontSize.sm }}>+ Add block</Text>
-                    </Pressable>
-                    <Pressable
-                      onPress={() => removeBlock(dow, block.id)}
-                      style={({ pressed }) => [{ opacity: pressed ? 0.75 : 1 }]}
-                    >
-                      <Text style={{ color: t.red, fontWeight: '700', fontSize: fontSize.sm }}>Remove</Text>
+                    {blocks.map((block, blockIdx) => (
+                      <View
+                        key={block.id}
+                        style={[styles.slotRow, !on && styles.slotRowDisabled]}
+                      >
+                        {blockIdx === 0 ? (
+                          <>
+                            <Text style={[styles.dayLabel, { color: on ? t.text : t.textMuted }]}>
+                              {shortLabel}
+                            </Text>
+                            <Switch
+                              value={on}
+                              onValueChange={() => toggleDay(dow)}
+                              trackColor={{ false: '#333', true: t.accentBgStrong }}
+                              thumbColor={on ? t.accent : '#666'}
+                              style={styles.toggle}
+                            />
+                          </>
+                        ) : (
+                          <View style={{ width: 36 + 42 }} />
+                        )}
+
+                        {on ? (
+                          <>
+                            <Pressable
+                              onPress={() => openPicker(dow, block.id, 'startTime')}
+                              style={[styles.timePill, { backgroundColor: t.bgInput, borderColor: t.border }]}
+                            >
+                              <Text style={[styles.timePillText, { color: t.text }]}>
+                                {block.startTime}
+                              </Text>
+                            </Pressable>
+                            <Text style={[styles.dash, { color: t.textMuted }]}>–</Text>
+                            <Pressable
+                              onPress={() => openPicker(dow, block.id, 'endTime')}
+                              style={[styles.timePill, { backgroundColor: t.bgInput, borderColor: t.border }]}
+                            >
+                              <Text style={[styles.timePillText, { color: t.text }]}>
+                                {block.endTime}
+                              </Text>
+                            </Pressable>
+                            <Pressable onPress={() => addBlock(dow)} hitSlop={8} style={styles.iconBtn}>
+                              <Ionicons name="add-circle-outline" size={18} color={t.accent} />
+                            </Pressable>
+                            {blocks.length > 1 && (
+                              <Pressable onPress={() => removeBlock(dow, block.id)} hitSlop={8} style={styles.iconBtn}>
+                                <Ionicons name="close-circle-outline" size={18} color={t.red} />
+                              </Pressable>
+                            )}
+                          </>
+                        ) : (
+                          <Text style={[styles.offLabel, { color: t.textMuted }]}>Off</Text>
+                        )}
+                      </View>
+                    ))}
+                  </View>
+                );
+              })}
+            </View>
+
+            {/* Holidays */}
+            <View style={styles.holidayHeader}>
+              <Text style={[styles.sectionTitle, { color: t.text }]}>Holiday periods</Text>
+              <Pressable
+                onPress={addHoliday}
+                hitSlop={8}
+                style={({ pressed }) => ({ opacity: pressed ? 0.7 : 1 })}
+              >
+                <Text style={{ color: t.accent, fontWeight: '700', fontSize: fontSize.sm }}>+ Add</Text>
+              </Pressable>
+            </View>
+            <Text style={[styles.holidaySub, { color: t.textMuted }]}>
+              Block specific date ranges (vacations, public holidays).
+            </Text>
+
+            {holidays.length === 0 ? (
+              <Text style={[styles.noHoliday, { color: t.textMuted }]}>No holidays set.</Text>
+            ) : (
+              <View style={[styles.weekCard, { backgroundColor: t.bgCard, borderColor: t.border }]}>
+                {holidays.map((h, idx) => (
+                  <View
+                    key={h.id}
+                    style={[
+                      styles.holidayRow,
+                      idx > 0 && { borderTopWidth: StyleSheet.hairlineWidth, borderTopColor: t.border },
+                    ]}
+                  >
+                    <TextInput
+                      value={h.startDate}
+                      onChangeText={(v) => updateHoliday(h.id, { startDate: v })}
+                      placeholder="YYYY-MM-DD"
+                      placeholderTextColor={t.textMuted}
+                      style={[styles.dateInput, { color: t.text, backgroundColor: t.bgInput, borderColor: t.border }]}
+                      maxLength={10}
+                      keyboardType={Platform.OS === 'ios' ? 'numbers-and-punctuation' : 'default'}
+                    />
+                    <Text style={[styles.dash, { color: t.textMuted }]}>→</Text>
+                    <TextInput
+                      value={h.endDate}
+                      onChangeText={(v) => updateHoliday(h.id, { endDate: v })}
+                      placeholder="YYYY-MM-DD"
+                      placeholderTextColor={t.textMuted}
+                      style={[styles.dateInput, { color: t.text, backgroundColor: t.bgInput, borderColor: t.border }]}
+                      maxLength={10}
+                      keyboardType={Platform.OS === 'ios' ? 'numbers-and-punctuation' : 'default'}
+                    />
+                    <Pressable onPress={() => removeHoliday(h.id)} hitSlop={10} style={styles.iconBtn}>
+                      <Ionicons name="close-circle" size={20} color={t.red} />
                     </Pressable>
                   </View>
-                </View>
-              ))}
-            </View>
-          ))
-        )}
-
-        {venues.length > 0 ? (
-          <Pressable
-            onPress={onSave}
-            disabled={saving}
-            style={({ pressed }) => [
-              styles.saveBtn,
-              { backgroundColor: t.accent, opacity: saving || pressed ? 0.88 : 1 },
-            ]}
-          >
-            {saving ? (
-              <ActivityIndicator color={t.bg} />
-            ) : (
-              <Text style={[styles.saveBtnText, { color: t.bg }]}>Save availability</Text>
+                ))}
+              </View>
             )}
-          </Pressable>
-        ) : null}
+          </>
+        )}
       </ScrollView>
+
+      {/* Time picker modal */}
+      <Modal visible={pickerVisible} transparent animationType="slide">
+        <Pressable style={styles.modalOverlay} onPress={() => setPickerVisible(false)}>
+          <View />
+        </Pressable>
+        <View style={[styles.pickerSheet, { backgroundColor: t.bgCard }]}>
+          <View style={styles.pickerHeader}>
+            <Text style={[styles.pickerTitle, { color: t.text }]}>
+              Select {pickerTarget?.field === 'startTime' ? 'start' : 'end'} time
+            </Text>
+            <Pressable onPress={() => setPickerVisible(false)} hitSlop={12}>
+              <Ionicons name="close" size={24} color={t.textSec} />
+            </Pressable>
+          </View>
+          <FlatList
+            data={TIME_OPTIONS}
+            keyExtractor={(item) => item}
+            style={styles.pickerList}
+            initialScrollIndex={Math.max(
+              0,
+              TIME_OPTIONS.findIndex((t) => t === pickerCurrentValue),
+            )}
+            getItemLayout={(_, index) => ({ length: 48, offset: 48 * index, index })}
+            renderItem={({ item }) => {
+              const selected = item === pickerCurrentValue;
+              return (
+                <Pressable
+                  onPress={() => onPickTime(item)}
+                  style={[
+                    styles.pickerItem,
+                    selected && { backgroundColor: t.accentBgStrong },
+                  ]}
+                >
+                  <Text
+                    style={[
+                      styles.pickerItemText,
+                      { color: selected ? t.accent : t.text },
+                      selected && { fontWeight: '800' },
+                    ]}
+                  >
+                    {item}
+                  </Text>
+                  {selected && <Ionicons name="checkmark" size={18} color={t.accent} />}
+                </Pressable>
+              );
+            }}
+          />
+        </View>
+      </Modal>
     </SafeAreaView>
   );
 }
 
 const styles = StyleSheet.create({
   safe: { flex: 1 },
-  scroll: { flex: 1 },
-  scrollContent: {
-    padding: spacing.lg,
-    paddingBottom: spacing['5xl'],
-    gap: spacing.md,
-  },
-  ratingCard: {
-    borderRadius: borderRadius.lg,
-    borderWidth: StyleSheet.hairlineWidth,
-    padding: spacing.md,
-  },
-  ratingHeader: {
+  topBar: {
     flexDirection: 'row',
     alignItems: 'center',
     justifyContent: 'space-between',
-    marginBottom: spacing.sm,
-  },
-  ratingTitle: {
-    fontSize: fontSize.xs,
-    fontWeight: '700',
-    textTransform: 'uppercase',
-    letterSpacing: 0.5,
-  },
-  dayCard: {
-    borderRadius: borderRadius.lg,
-    borderWidth: StyleSheet.hairlineWidth,
-    padding: spacing.md,
-    gap: spacing.md,
-  },
-  dayTitle: {
-    fontSize: fontSize.lg,
-    fontWeight: '800',
-  },
-  block: {
-    borderTopWidth: StyleSheet.hairlineWidth,
-    paddingTop: spacing.md,
-    gap: spacing.sm,
-  },
-  row: {
-    flexDirection: 'row',
-    gap: spacing.md,
-  },
-  timeCol: {
-    flex: 1,
-  },
-  miniLabel: {
-    fontSize: fontSize.xs,
-    fontWeight: '600',
-    marginBottom: spacing.xs,
-  },
-  timeInput: {
-    borderWidth: StyleSheet.hairlineWidth,
-    borderRadius: borderRadius.md,
-    paddingHorizontal: spacing.sm,
-    paddingVertical: spacing.sm,
-    fontSize: fontSize.md,
-  },
-  venueBtn: {
-    flexDirection: 'row',
-    alignItems: 'center',
-    justifyContent: 'space-between',
-    gap: spacing.md,
-    borderWidth: StyleSheet.hairlineWidth,
-    borderRadius: borderRadius.md,
     paddingHorizontal: spacing.md,
-    paddingVertical: spacing.md,
+    paddingVertical: spacing.sm,
   },
-  venueBtnText: {
-    flex: 1,
-    fontSize: fontSize.sm,
-    fontWeight: '600',
-  },
-  venueRow: {
-    paddingVertical: spacing.md,
-    paddingHorizontal: spacing.sm,
-    borderRadius: borderRadius.sm,
-    marginTop: spacing.xs,
-  },
-  venueRowText: {
-    fontSize: fontSize.sm,
-    fontWeight: '600',
-  },
-  blockActions: {
+  backBtn: {
     flexDirection: 'row',
-    justifyContent: 'space-between',
-    marginTop: spacing.sm,
-  },
-  saveBtn: {
-    marginTop: spacing.lg,
-    borderRadius: borderRadius.lg,
-    paddingVertical: spacing.lg,
     alignItems: 'center',
+    gap: 2,
+    minWidth: 70,
   },
-  saveBtnText: {
-    fontSize: fontSize.md,
-    fontWeight: '700',
-  },
-  centered: {
-    minHeight: 120,
+  backText: { fontSize: fontSize.md, fontWeight: '600' },
+  topTitle: { fontSize: fontSize.md, fontWeight: '700', flex: 1, textAlign: 'center' },
+  saveTopBtn: {
+    minWidth: 60,
+    paddingVertical: 6,
+    paddingHorizontal: spacing.md,
+    borderRadius: borderRadius.md,
     alignItems: 'center',
     justifyContent: 'center',
   },
+  saveTopText: { fontSize: fontSize.sm, fontWeight: '700' },
+  scroll: { flex: 1 },
+  scrollContent: { paddingHorizontal: spacing.md, paddingBottom: spacing['5xl'] },
+  subtitle: { fontSize: fontSize.xs, marginBottom: spacing.sm },
+  weekCard: {
+    borderRadius: borderRadius.lg,
+    borderWidth: StyleSheet.hairlineWidth,
+    overflow: 'hidden',
+  },
+  daySection: { paddingVertical: 4, paddingHorizontal: spacing.sm },
+  slotRow: {
+    flexDirection: 'row',
+    alignItems: 'center',
+    minHeight: 40,
+    gap: 4,
+  },
+  slotRowDisabled: { opacity: 0.6 },
+  dayLabel: { width: 36, fontSize: fontSize.sm, fontWeight: '700' },
+  toggle: { transform: [{ scale: 0.7 }], marginRight: -2 },
+  timePill: {
+    borderWidth: StyleSheet.hairlineWidth,
+    borderRadius: borderRadius.sm,
+    paddingHorizontal: 10,
+    paddingVertical: 6,
+    minWidth: 58,
+    alignItems: 'center',
+  },
+  timePillText: { fontSize: fontSize.sm, fontWeight: '600' },
+  dash: { fontSize: fontSize.sm, fontWeight: '600', marginHorizontal: 2 },
+  offLabel: { fontSize: fontSize.sm, fontStyle: 'italic' },
+  iconBtn: { padding: 2 },
+  centered: { minHeight: 120, alignItems: 'center', justifyContent: 'center' },
+
+  holidayHeader: {
+    flexDirection: 'row',
+    alignItems: 'center',
+    justifyContent: 'space-between',
+    marginTop: spacing.xl,
+    marginBottom: 2,
+  },
+  sectionTitle: { fontSize: fontSize.md, fontWeight: '700' },
+  holidaySub: { fontSize: fontSize.xs, marginBottom: spacing.sm },
+  noHoliday: { fontSize: fontSize.xs, marginBottom: spacing.sm },
+  holidayRow: {
+    flexDirection: 'row',
+    alignItems: 'center',
+    paddingVertical: spacing.sm,
+    paddingHorizontal: spacing.sm,
+    gap: 6,
+  },
+  dateInput: {
+    flex: 1,
+    borderWidth: StyleSheet.hairlineWidth,
+    borderRadius: borderRadius.sm,
+    paddingHorizontal: 8,
+    paddingVertical: 6,
+    fontSize: fontSize.sm,
+    textAlign: 'center',
+  },
+
+  modalOverlay: {
+    flex: 1,
+    backgroundColor: 'rgba(0,0,0,0.5)',
+  },
+  pickerSheet: {
+    borderTopLeftRadius: 20,
+    borderTopRightRadius: 20,
+    maxHeight: '50%',
+    paddingBottom: 30,
+  },
+  pickerHeader: {
+    flexDirection: 'row',
+    alignItems: 'center',
+    justifyContent: 'space-between',
+    paddingHorizontal: spacing.lg,
+    paddingVertical: spacing.md,
+  },
+  pickerTitle: { fontSize: fontSize.md, fontWeight: '700' },
+  pickerList: { paddingHorizontal: spacing.sm },
+  pickerItem: {
+    height: 48,
+    flexDirection: 'row',
+    alignItems: 'center',
+    justifyContent: 'space-between',
+    paddingHorizontal: spacing.md,
+    borderRadius: borderRadius.sm,
+  },
+  pickerItemText: { fontSize: fontSize.lg, fontWeight: '600' },
 });

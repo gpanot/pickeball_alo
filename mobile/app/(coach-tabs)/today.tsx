@@ -9,12 +9,12 @@ import {
   StyleSheet,
 } from 'react-native';
 import { SafeAreaView } from 'react-native-safe-area-context';
-import { useRouter, type Href } from 'expo-router';
+import { useRouter, type Href, useNavigation } from 'expo-router';
 import { Ionicons } from '@expo/vector-icons';
 import { useCoachAuth } from '@/context/CoachAuthContext';
 import { useSession } from '@/context/SessionContext';
 import { SectionHeader, EmptyState } from '@/components/coach';
-import { listCoachCourts } from '@/mobile/lib/coach-api';
+import { listCoachCourts, getCoachAvailability } from '@/mobile/lib/coach-api';
 import { formatVndFull } from '@/mobile/lib/formatters';
 import { spacing, fontSize, borderRadius, darkTheme as t } from '@/mobile/lib/theme';
 import type { CoachSessionResult } from '@/mobile/lib/coach-types';
@@ -72,12 +72,23 @@ export default function CoachTodayScreen() {
   }, [authLoading, coach, loadSessions]);
 
   const [hasCourts, setHasCourts] = useState<boolean | null>(null);
+  const [hasAvailability, setHasAvailability] = useState<boolean | null>(null);
+  const navigation = useNavigation();
+
   useEffect(() => {
     if (!coach) return;
-    listCoachCourts(coach.id)
-      .then((courts) => setHasCourts(Array.isArray(courts) && courts.length > 0))
-      .catch(() => setHasCourts(false));
-  }, [coach]);
+    const refreshSetupStatus = () => {
+      listCoachCourts(coach.id)
+        .then((courts) => setHasCourts(Array.isArray(courts) && courts.length > 0))
+        .catch(() => setHasCourts(false));
+      getCoachAvailability(coach.id)
+        .then((rows) => setHasAvailability(Array.isArray(rows) && rows.length > 0))
+        .catch(() => setHasAvailability(false));
+    };
+    refreshSetupStatus();
+    const unsubscribe = navigation.addListener('focus', refreshSetupStatus);
+    return unsubscribe;
+  }, [coach, navigation]);
 
   const hasBank = Boolean(coach?.bankAccountNumber);
   const setupComplete = hasCourts === true && hasBank;
@@ -272,11 +283,11 @@ export default function CoachTodayScreen() {
                 </Text>
                 <SetupItem
                   done={hasCourts === true}
-                  label="Link a court"
+                  label="Add preferred courts"
                   onPress={() => router.push('/(coach-tabs)/court-partnership' as Href)}
                 />
                 <SetupItem
-                  done={false}
+                  done={hasAvailability === true}
                   label="Set your availability"
                   onPress={() => router.push('/(coach-tabs)/availability-editor' as Href)}
                 />
@@ -291,7 +302,7 @@ export default function CoachTodayScreen() {
             {/* Quick Actions */}
             <View style={styles.quickActions}>
               <QuickAction icon="calendar-outline" label="Availability" onPress={() => router.push('/(coach-tabs)/availability-editor' as Href)} />
-              <QuickAction icon="business-outline" label="Courts" onPress={() => router.push('/(coach-tabs)/court-partnership' as Href)} />
+              <QuickAction icon="business-outline" label="Pref. Courts" onPress={() => router.push('/(coach-tabs)/court-partnership' as Href)} />
               <QuickAction icon="cash-outline" label="Earnings" onPress={() => router.push('/(coach-tabs)/earnings' as Href)} />
             </View>
 

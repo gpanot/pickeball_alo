@@ -11,6 +11,7 @@ import {
 } from 'react-native';
 import { SafeAreaView } from 'react-native-safe-area-context';
 import { useRouter } from 'expo-router';
+import { Ionicons } from '@expo/vector-icons';
 import { spacing, fontSize, borderRadius } from '@/mobile/lib/theme';
 import { darkTheme as t } from '@/mobile/lib/theme';
 import { useCoachAuth } from '@/context/CoachAuthContext';
@@ -159,10 +160,16 @@ export default function CoachCourtPartnershipScreen() {
     }
   }, [searchText]);
 
+  const MAX_COURTS = 10;
+
   const onAddCourt = useCallback(
     async (venueId: string) => {
       if (!coach?.id || !token) {
         Alert.alert('Sign in required', 'Coach token is required.');
+        return;
+      }
+      if (courts.length >= MAX_COURTS) {
+        Alert.alert('Limit reached', `You can link up to ${MAX_COURTS} preferred courts.`);
         return;
       }
       setBusyVenueId(venueId);
@@ -177,7 +184,7 @@ export default function CoachCourtPartnershipScreen() {
         setBusyVenueId(null);
       }
     },
-    [coach?.id, loadCourts, token],
+    [coach?.id, courts.length, loadCourts, token],
   );
 
   const onRemoveCourt = useCallback(
@@ -234,7 +241,10 @@ export default function CoachCourtPartnershipScreen() {
         contentContainerStyle={styles.scrollContent}
         keyboardShouldPersistTaps="handled"
       >
-        <SectionHeader title="Court partnerships" theme={t} />
+        <SectionHeader title="Preferred courts" theme={t} />
+        <Text style={[styles.courtCountHint, { color: t.textSec }]}>
+          {courts.length}/10 courts linked. Your availability applies to all your preferred courts.
+        </Text>
 
         {loading ? (
           <View style={styles.centered}>
@@ -242,121 +252,123 @@ export default function CoachCourtPartnershipScreen() {
           </View>
         ) : courts.length === 0 && pendingInvites.length === 0 ? (
           <EmptyState
-            title="No linked courts"
-            subtitle="Add a venue you coach at, or accept an invite below."
+            title="No preferred courts"
+            subtitle="Add venues where you coach. You can link up to 10 preferred courts."
             theme={t}
           />
         ) : null}
 
-        {courts.map((link) => {
-          const name = link.venue?.name ?? 'Venue';
-          const addr = link.venue?.address ?? '';
-          const courtsLabel = link.courtIds.length ? link.courtIds.join(', ') : '—';
-          return (
-            <View
-              key={link.id}
-              style={[styles.card, { backgroundColor: t.bgCard, borderColor: t.border }]}
-            >
-              <View style={styles.cardHeader}>
-                <Text style={[styles.venueTitle, { color: t.text }]} numberOfLines={2}>
-                  {name}
-                </Text>
+        {courts.length > 0 && (
+          <View style={[styles.courtList, { backgroundColor: t.bgCard, borderColor: t.border }]}>
+            {courts.map((link, idx) => {
+              const name = link.venue?.name ?? 'Venue';
+              const addr = link.venue?.address ?? '';
+              return (
                 <View
+                  key={link.id}
                   style={[
-                    styles.pill,
-                    {
-                      backgroundColor: link.isActive ? t.accentBgStrong : t.bgSurface,
-                      borderColor: t.border,
-                    },
+                    styles.courtRow,
+                    idx > 0 && { borderTopWidth: StyleSheet.hairlineWidth, borderTopColor: t.border },
                   ]}
                 >
-                  <Text style={[styles.pillText, { color: link.isActive ? t.accent : t.textSec }]}>
-                    {link.isActive ? 'Active' : 'Inactive'}
-                  </Text>
+                  <View style={styles.courtInfo}>
+                    <View style={styles.courtNameRow}>
+                      <Text style={[styles.courtName, { color: t.text }]} numberOfLines={1}>
+                        {name}
+                      </Text>
+                      <View
+                        style={[
+                          styles.miniPill,
+                          { backgroundColor: link.isActive ? t.accentBgStrong : t.bgSurface },
+                        ]}
+                      >
+                        <Text style={[styles.miniPillText, { color: link.isActive ? t.accent : t.textSec }]}>
+                          {link.isActive ? 'Active' : 'Inactive'}
+                        </Text>
+                      </View>
+                    </View>
+                    {addr ? (
+                      <Text style={[styles.courtAddr, { color: t.textMuted }]} numberOfLines={1}>
+                        {addr}
+                      </Text>
+                    ) : null}
+                  </View>
+                  <Pressable
+                    disabled={busyVenueId === link.venueId || !token}
+                    onPress={() => onRemoveCourt(link.venueId)}
+                    hitSlop={10}
+                    style={({ pressed }) => ({
+                      opacity: pressed || busyVenueId === link.venueId ? 0.5 : 1,
+                      padding: 4,
+                    })}
+                  >
+                    <Ionicons name="close-circle" size={22} color={t.red} />
+                  </Pressable>
+                </View>
+              );
+            })}
+          </View>
+        )}
+
+        {pendingInvites.length > 0 && (
+          <>
+            <SectionHeader title="Pending invites" theme={t} />
+            {pendingInvites.map((inv) => (
+              <View
+                key={inv.id}
+                style={[styles.inviteRow, { backgroundColor: t.bgCard, borderColor: t.border }]}
+              >
+                <Text style={[styles.courtName, { color: t.text, flex: 1 }]} numberOfLines={1}>
+                  {inv.venueName ?? 'Venue invite'}
+                </Text>
+                <View style={styles.inviteActions}>
+                  <Pressable
+                    disabled={busyInviteId === inv.id || !token}
+                    onPress={() => onInviteAction(inv.id, 'decline')}
+                    hitSlop={6}
+                    style={({ pressed }) => [
+                      styles.inviteSmBtn,
+                      { borderColor: t.border, opacity: pressed ? 0.7 : 1 },
+                    ]}
+                  >
+                    <Text style={[styles.inviteSmText, { color: t.textSec }]}>Decline</Text>
+                  </Pressable>
+                  <Pressable
+                    disabled={busyInviteId === inv.id || !token}
+                    onPress={() => onInviteAction(inv.id, 'accept')}
+                    hitSlop={6}
+                    style={({ pressed }) => [
+                      styles.inviteSmBtn,
+                      { backgroundColor: t.accent, borderColor: t.accent, opacity: pressed ? 0.8 : 1 },
+                    ]}
+                  >
+                    <Text style={[styles.inviteSmText, { color: t.bg }]}>Accept</Text>
+                  </Pressable>
                 </View>
               </View>
-              {addr ? (
-                <Text style={[styles.address, { color: t.textSec }]} numberOfLines={3}>
-                  {addr}
-                </Text>
-              ) : null}
-              <Text style={[styles.meta, { color: t.textMuted }]}>Court IDs: {courtsLabel}</Text>
-              <Pressable
-                disabled={busyVenueId === link.venueId || !token}
-                onPress={() => onRemoveCourt(link.venueId)}
-                style={({ pressed }) => [
-                  styles.removeBtn,
-                  {
-                    borderColor: t.red,
-                    opacity: pressed || busyVenueId === link.venueId ? 0.75 : 1,
-                  },
-                ]}
-              >
-                <Text style={[styles.removeLabel, { color: t.red }]}>Remove</Text>
-              </Pressable>
-            </View>
-          );
-        })}
-
-        <SectionHeader title="Pending invites" theme={t} />
-        {pendingInvites.length === 0 ? (
-          <Text style={[styles.emptyInvite, { color: t.textMuted }]}>No pending invites.</Text>
-        ) : (
-          pendingInvites.map((inv) => (
-            <View
-              key={inv.id}
-              style={[styles.card, { backgroundColor: t.bgCard, borderColor: t.border }]}
-            >
-              <Text style={[styles.venueTitle, { color: t.text }]} numberOfLines={2}>
-                {inv.venueName ?? 'Venue invite'}
-              </Text>
-              <View style={styles.inviteActions}>
-                <Pressable
-                  disabled={busyInviteId === inv.id || !token}
-                  onPress={() => onInviteAction(inv.id, 'decline')}
-                  style={({ pressed }) => [
-                    styles.inviteBtn,
-                    {
-                      borderColor: t.border,
-                      backgroundColor: t.bgSurface,
-                      opacity: pressed ? 0.85 : 1,
-                    },
-                  ]}
-                >
-                  <Text style={[styles.inviteBtnText, { color: t.text }]}>Decline</Text>
-                </Pressable>
-                <Pressable
-                  disabled={busyInviteId === inv.id || !token}
-                  onPress={() => onInviteAction(inv.id, 'accept')}
-                  style={({ pressed }) => [
-                    styles.inviteBtn,
-                    styles.inviteBtnPrimary,
-                    {
-                      backgroundColor: t.accent,
-                      opacity: pressed ? 0.88 : 1,
-                    },
-                  ]}
-                >
-                  <Text style={[styles.inviteBtnText, { color: t.bg }]}>Accept</Text>
-                </Pressable>
-              </View>
-            </View>
-          ))
+            ))}
+          </>
         )}
 
         <SectionHeader title="Add court" theme={t} />
-        <Pressable
-          onPress={runVenueSearch}
-          style={({ pressed }) => [
-            styles.addCourtBtn,
-            {
-              backgroundColor: t.accent,
-              opacity: pressed ? 0.9 : 1,
-            },
-          ]}
-        >
-          <Text style={[styles.addCourtBtnText, { color: t.bg }]}>Add Court</Text>
-        </Pressable>
+        {courts.length >= MAX_COURTS ? (
+          <Text style={[styles.courtCountHint, { color: t.textMuted }]}>
+            Maximum of {MAX_COURTS} preferred courts reached.
+          </Text>
+        ) : (
+          <Pressable
+            onPress={runVenueSearch}
+            style={({ pressed }) => [
+              styles.addCourtBtn,
+              {
+                backgroundColor: t.accent,
+                opacity: pressed ? 0.9 : 1,
+              },
+            ]}
+          >
+            <Text style={[styles.addCourtBtnText, { color: t.bg }]}>Add Court</Text>
+          </Pressable>
+        )}
         <View style={[styles.searchWrap, { backgroundColor: t.bgInput, borderColor: t.border }]}>
           <TextInput
             value={searchText}
@@ -412,121 +424,119 @@ const styles = StyleSheet.create({
   back: { fontSize: fontSize.md, fontWeight: '600' },
   scroll: { flex: 1 },
   scrollContent: {
-    paddingHorizontal: spacing.lg,
+    paddingHorizontal: spacing.md,
     paddingBottom: spacing['4xl'],
-    gap: spacing.md,
+    gap: spacing.sm,
   },
   centered: {
     paddingVertical: spacing['2xl'],
     alignItems: 'center',
   },
-  card: {
+  courtList: {
     borderRadius: borderRadius.lg,
-    borderWidth: 1,
-    padding: spacing.lg,
+    borderWidth: StyleSheet.hairlineWidth,
+    overflow: 'hidden',
+  },
+  courtRow: {
+    flexDirection: 'row',
+    alignItems: 'center',
+    paddingVertical: spacing.sm,
+    paddingHorizontal: spacing.md,
     gap: spacing.sm,
   },
-  cardHeader: {
-    flexDirection: 'row',
-    alignItems: 'flex-start',
-    justifyContent: 'space-between',
-    gap: spacing.md,
-  },
-  venueTitle: {
+  courtInfo: {
     flex: 1,
-    fontSize: fontSize.md,
-    fontWeight: '700',
+    minWidth: 0,
   },
-  pill: {
-    borderRadius: borderRadius.full,
-    borderWidth: 1,
-    paddingVertical: spacing.xs,
-    paddingHorizontal: spacing.sm,
+  courtNameRow: {
+    flexDirection: 'row',
+    alignItems: 'center',
+    gap: spacing.sm,
   },
-  pillText: {
-    fontSize: fontSize.xs,
-    fontWeight: '700',
-  },
-  address: {
+  courtName: {
     fontSize: fontSize.sm,
-    lineHeight: fontSize.sm * 1.4,
+    fontWeight: '700',
+    flexShrink: 1,
   },
-  meta: {
+  miniPill: {
+    borderRadius: borderRadius.full,
+    paddingVertical: 2,
+    paddingHorizontal: 6,
+  },
+  miniPillText: {
+    fontSize: 10,
+    fontWeight: '700',
+  },
+  courtAddr: {
     fontSize: fontSize.xs,
+    marginTop: 1,
   },
-  removeBtn: {
-    marginTop: spacing.sm,
+  inviteRow: {
+    flexDirection: 'row',
+    alignItems: 'center',
+    borderRadius: borderRadius.md,
+    borderWidth: StyleSheet.hairlineWidth,
+    paddingVertical: spacing.sm,
+    paddingHorizontal: spacing.md,
+    gap: spacing.sm,
+  },
+  inviteActions: {
+    flexDirection: 'row',
+    gap: 6,
+  },
+  inviteSmBtn: {
+    paddingVertical: 4,
+    paddingHorizontal: spacing.sm,
+    borderRadius: borderRadius.sm,
+    borderWidth: 1,
+  },
+  inviteSmText: {
+    fontSize: fontSize.xs,
+    fontWeight: '700',
+  },
+  addCourtBtn: {
     alignSelf: 'flex-start',
     paddingVertical: spacing.sm,
     paddingHorizontal: spacing.lg,
     borderRadius: borderRadius.md,
-    borderWidth: 1,
-  },
-  removeLabel: {
-    fontSize: fontSize.sm,
-    fontWeight: '700',
-  },
-  emptyInvite: {
-    fontSize: fontSize.sm,
-    paddingVertical: spacing.sm,
-  },
-  inviteActions: {
-    flexDirection: 'row',
-    gap: spacing.sm,
-    marginTop: spacing.md,
-  },
-  inviteBtn: {
-    flex: 1,
-    paddingVertical: spacing.md,
-    borderRadius: borderRadius.lg,
-    alignItems: 'center',
-    borderWidth: 1,
-  },
-  inviteBtnPrimary: {
-    borderWidth: 0,
-  },
-  addCourtBtn: {
-    alignSelf: 'flex-start',
-    paddingVertical: spacing.md,
-    paddingHorizontal: spacing['2xl'],
-    borderRadius: borderRadius.lg,
   },
   addCourtBtnText: {
-    fontSize: fontSize.md,
-    fontWeight: '700',
-  },
-  inviteBtnText: {
-    fontSize: fontSize.md,
+    fontSize: fontSize.sm,
     fontWeight: '700',
   },
   searchWrap: {
-    borderWidth: 1,
-    borderRadius: borderRadius.lg,
-    paddingHorizontal: spacing.md,
+    borderWidth: StyleSheet.hairlineWidth,
+    borderRadius: borderRadius.md,
+    paddingHorizontal: spacing.sm,
   },
   searchInput: {
-    paddingVertical: spacing.md,
-    fontSize: fontSize.md,
+    paddingVertical: spacing.sm,
+    fontSize: fontSize.sm,
   },
   searchSpinner: {
-    marginVertical: spacing.sm,
+    marginVertical: spacing.xs,
   },
   venueRow: {
-    borderWidth: 1,
-    borderRadius: borderRadius.lg,
-    padding: spacing.lg,
-    gap: spacing.xs,
+    borderWidth: StyleSheet.hairlineWidth,
+    borderRadius: borderRadius.md,
+    paddingVertical: spacing.sm,
+    paddingHorizontal: spacing.md,
   },
   venueRowTitle: {
-    fontSize: fontSize.md,
+    fontSize: fontSize.sm,
     fontWeight: '700',
   },
   venueRowSub: {
-    fontSize: fontSize.sm,
+    fontSize: fontSize.xs,
+    marginTop: 1,
   },
   addHint: {
-    fontSize: fontSize.xs,
+    fontSize: 10,
     fontWeight: '600',
-    marginTop: spacing.xs,
+    marginTop: 2,
+  },
+  courtCountHint: {
+    fontSize: fontSize.sm,
+    lineHeight: fontSize.sm * 1.5,
   },
 });
