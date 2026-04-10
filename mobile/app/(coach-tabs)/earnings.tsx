@@ -57,7 +57,7 @@ function playerLabel(session: CoachSessionResult): string {
 
 export default function CoachEarningsScreen() {
   const router = useRouter();
-  const { coach, isLoggedIn } = useCoachAuth();
+  const { coach } = useCoachAuth();
 
   const now = new Date();
   const [cursor, setCursor] = useState({ y: now.getFullYear(), m: now.getMonth() });
@@ -91,11 +91,6 @@ export default function CoachEarningsScreen() {
     void load();
   }, [load]);
 
-  useEffect(() => {
-    if (!isLoggedIn) {
-      router.replace('/(coach-tabs)/login');
-    }
-  }, [isLoggedIn, router]);
 
   const monthSessions = useMemo(
     () => sessions.filter((s) => sessionInMonth(s, cursor.y, cursor.m)),

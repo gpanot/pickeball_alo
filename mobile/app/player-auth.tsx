@@ -14,6 +14,13 @@ import { SafeAreaView } from 'react-native-safe-area-context';
 import { useCourtMap } from '@/context/CourtMapContext';
 import { playerLogin, playerRegister } from '@/mobile/lib/player-api';
 import { darkTheme as t, spacing, fontSize, borderRadius } from '@/mobile/lib/theme';
+import WelcomePopup, { type WelcomeFeature } from '@/components/WelcomePopup';
+
+const PLAYER_FEATURES: WelcomeFeature[] = [
+  { icon: 'card-outline', title: 'Join a club', subtitle: 'Train regularly, pay less' },
+  { icon: 'trophy-outline', title: 'Buy packs', subtitle: 'Save up to 20%' },
+  { icon: 'people-outline', title: 'Train with friends', subtitle: 'Split the cost' },
+];
 
 type TabMode = 'login' | 'register';
 
@@ -29,6 +36,7 @@ export default function PlayerAuthScreen() {
   const [regPassword, setRegPassword] = useState('');
   const [loading, setLoading] = useState(false);
   const [error, setError] = useState<string | null>(null);
+  const [showWelcome, setShowWelcome] = useState(true);
 
   useEffect(() => {
     if (userName?.trim() && userPhone?.trim()) {
@@ -83,12 +91,20 @@ export default function PlayerAuthScreen() {
 
   return (
     <SafeAreaView style={[styles.root, { backgroundColor: t.bg }]} edges={['top', 'bottom']}>
+      <WelcomePopup
+        visible={showWelcome}
+        onDismiss={() => setShowWelcome(false)}
+        headline={'Flexible training\nthat fits you'}
+        subheadline="Train your way, save money, no pressure"
+        features={PLAYER_FEATURES}
+        footnote="You're always in control of how you train"
+      />
       <ScrollView
         keyboardShouldPersistTaps="handled"
         contentContainerStyle={styles.scrollContent}
         showsVerticalScrollIndicator={false}
       >
-        <Pressable onPress={() => router.replace('/onboarding')} style={styles.backBtn}>
+        <Pressable onPress={() => router.replace('/onboarding?start=role')} style={styles.backBtn}>
           <Text style={[styles.backText, { color: t.textSec }]}>← Back</Text>
         </Pressable>
 

@@ -1,0 +1,28 @@
+{
+  "onboarding": {
+    "slide1": {
+      "tagline": "COURTMAP",
+      "headline": "Find your coach.\nNo group chats required.",
+      "subtext": "Stop asking around. Every verified pickleball coach near you - with real ratings from real players.",
+      "cta": "Next",
+      "skip": "Skip"
+    },
+    "slide2": {
+      "tagline": "TRUST",
+      "headline": "Ratings you can actually trust.",
+      "subtext": "Every review comes from a player who completed at least 3 sessions. No fake stars. No bought reviews. Just honest feedback.",
+      "trustNote": "Reviews unlock only after 3 real completed sessions.",
+      "noFakeStars": "No fake stars possible.",
+      "cta": "Next",
+      "back": "Back"
+    },
+    "slide3": {
+      "tagline": "BOOK NOW",
+      "headline": "The best coaches fill up fast.",
+      "subtext": "Stop waiting for a reply that might not come. See real availability, book instantly, get confirmed in seconds.",
+      "urgencyNote": "2 slots left this week with Coach Minh",
+      "cta": "Get started",
+      "back": "Back"
+    }
+  }
+}

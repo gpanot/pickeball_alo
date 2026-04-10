@@ -71,7 +71,7 @@ function normalizeCourtLinks(raw: unknown): CourtLinkRow[] {
 
 export default function CoachCourtPartnershipScreen() {
   const router = useRouter();
-  const { coach, token, isLoggedIn } = useCoachAuth();
+  const { coach, token } = useCoachAuth();
 
   const [loading, setLoading] = useState(true);
   const [courts, setCourts] = useState<CourtLinkRow[]>([]);
@@ -125,11 +125,6 @@ export default function CoachCourtPartnershipScreen() {
     void refreshAll();
   }, [refreshAll]);
 
-  useEffect(() => {
-    if (!isLoggedIn) {
-      router.replace('/(coach-tabs)/login');
-    }
-  }, [isLoggedIn, router]);
 
   const runVenueSearch = useCallback(async () => {
     const q = searchText.trim();

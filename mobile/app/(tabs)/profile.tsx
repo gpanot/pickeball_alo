@@ -9,7 +9,6 @@ import {
   StyleSheet,
 } from 'react-native';
 import { useRouter } from 'expo-router';
-import AsyncStorage from '@react-native-async-storage/async-storage';
 import { BackIcon, CalendarIcon, HeartIcon, CoachIcon } from '@/components/Icons';
 import { Ionicons } from '@expo/vector-icons';
 import ScreenTopBar from '@/components/ui/ScreenTopBar';
@@ -32,18 +31,6 @@ export default function ProfileRoute() {
   const [name, setName] = useState(userName);
   const [phone, setPhone] = useState(userPhone);
   const [saved, setSaved] = useState(false);
-
-  const resetAllLocalSession = async () => {
-    await AsyncStorage.multiRemove([
-      'cm_saved',
-      'cm_userId',
-      'cm_userName',
-      'cm_userPhone',
-      'coach_jwt_token',
-      'coach_profile',
-    ]);
-    logoutPlayer();
-  };
 
   useEffect(() => {
     setName(userName);
@@ -156,27 +143,6 @@ export default function ProfileRoute() {
             style={[styles.link, { backgroundColor: t.bgCard, borderColor: t.red }]}
           >
             <Text style={[styles.linkText, { color: t.red }]}>Log out Player</Text>
-          </Pressable>
-          <Pressable
-            onPress={() =>
-              Alert.alert(
-                'Reset test session',
-                'This clears BOTH player and coach local session data on this device.',
-                [
-                  { text: 'Cancel', style: 'cancel' },
-                  {
-                    text: 'Reset all',
-                    style: 'destructive',
-                    onPress: () => {
-                      void resetAllLocalSession();
-                    },
-                  },
-                ],
-              )
-            }
-            style={[styles.link, { backgroundColor: t.bgCard, borderColor: t.orange }]}
-          >
-            <Text style={[styles.linkText, { color: t.orange }]}>Reset Test Session (All)</Text>
           </Pressable>
         </View>
       </View>

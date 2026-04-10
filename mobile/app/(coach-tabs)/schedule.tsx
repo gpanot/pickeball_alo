@@ -43,13 +43,9 @@ export default function CoachScheduleScreen() {
   }, []);
 
   useEffect(() => {
-    if (authLoading) return;
-    if (!coach) {
-      router.replace('/(coach-tabs)/login' as Href);
-      return;
-    }
+    if (authLoading || !coach) return;
     void loadSessions({ coachId: coach.id });
-  }, [authLoading, coach, loadSessions, router]);
+  }, [authLoading, coach, loadSessions]);
 
   const sessionsByYmd = useMemo(() => {
     const map = new Map<string, CoachSessionResult[]>();

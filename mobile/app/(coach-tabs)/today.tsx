@@ -67,13 +67,9 @@ export default function CoachTodayScreen() {
   const todayStr = useMemo(() => localYMD(new Date()), []);
 
   useEffect(() => {
-    if (authLoading) return;
-    if (!coach) {
-      router.replace('/(coach-tabs)/login' as Href);
-      return;
-    }
+    if (authLoading || !coach) return;
     void loadSessions({ coachId: coach.id });
-  }, [authLoading, coach, loadSessions, router]);
+  }, [authLoading, coach, loadSessions]);
 
   const [hasCourts, setHasCourts] = useState<boolean | null>(null);
   useEffect(() => {

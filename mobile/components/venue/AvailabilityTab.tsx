@@ -219,7 +219,7 @@ export default function AvailabilityTab({
                     >
                       {isAloboBooked ? (
                         <Text style={{ fontSize: 9, fontWeight: '700', color: t.orange }}>
-                          AloBo
+                          Booked
                         </Text>
                       ) : (
                         <Text

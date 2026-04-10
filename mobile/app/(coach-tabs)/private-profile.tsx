@@ -1,8 +1,7 @@
 import React, { useCallback, useEffect, useState } from 'react';
-import { View, Text, Pressable, ScrollView, Alert, StyleSheet } from 'react-native';
+import { View, Text, Pressable, ScrollView, StyleSheet } from 'react-native';
 import { SafeAreaView } from 'react-native-safe-area-context';
 import { useRouter, type Href } from 'expo-router';
-import AsyncStorage from '@react-native-async-storage/async-storage';
 import { spacing, fontSize, borderRadius } from '@/mobile/lib/theme';
 import { darkTheme as t } from '@/mobile/lib/theme';
 import { useCoachAuth } from '@/context/CoachAuthContext';
@@ -11,14 +10,9 @@ import { StatusChip } from '@/components/coach';
 
 export default function CoachPrivateProfileScreen() {
   const router = useRouter();
-  const { coach, token, logout, isLoggedIn } = useCoachAuth();
+  const { coach, token, logout } = useCoachAuth();
   const [sub, setSub] = useState<CoachSubscriptionResult | null>(null);
 
-  useEffect(() => {
-    if (!isLoggedIn) {
-      router.replace('/(coach-tabs)/login');
-    }
-  }, [isLoggedIn, router]);
 
   useEffect(() => {
     if (!coach?.id || !token) {
@@ -32,21 +26,7 @@ export default function CoachPrivateProfileScreen() {
 
   const onLogout = useCallback(async () => {
     await logout();
-    router.replace('/(coach-tabs)/login');
-  }, [logout, router]);
-
-  const onResetAllLocalSession = useCallback(async () => {
-    await AsyncStorage.multiRemove([
-      'cm_saved',
-      'cm_userId',
-      'cm_userName',
-      'cm_userPhone',
-      'coach_jwt_token',
-      'coach_profile',
-    ]);
-    await logout();
-    router.replace('/(coach-tabs)/login');
-  }, [logout, router]);
+  }, [logout]);
 
   const subLabel = sub?.plan ?? coach?.subscriptionPlan ?? '—';
   const expiresStr = sub?.expires
@@ -108,30 +88,6 @@ export default function CoachPrivateProfileScreen() {
             ]}
           >
             <Text style={[styles.actionText, { color: t.text }]}>Log out coach</Text>
-          </Pressable>
-          <Pressable
-            onPress={() =>
-              Alert.alert(
-                'Reset test session',
-                'This clears BOTH player and coach local session data on this device.',
-                [
-                  { text: 'Cancel', style: 'cancel' },
-                  {
-                    text: 'Reset all',
-                    style: 'destructive',
-                    onPress: () => {
-                      void onResetAllLocalSession();
-                    },
-                  },
-                ],
-              )
-            }
-            style={({ pressed }) => [
-              styles.actionBtnOutline,
-              { borderColor: t.orange, opacity: pressed ? 0.9 : 1 },
-            ]}
-          >
-            <Text style={[styles.actionText, { color: t.orange }]}>Reset test session (all)</Text>
           </Pressable>
         </View>
       </ScrollView>
@@ -213,12 +169,6 @@ const styles = StyleSheet.create({
   actionBtn: {
     borderRadius: borderRadius.md,
     paddingVertical: spacing.md,
-    alignItems: 'center',
-  },
-  actionBtnOutline: {
-    borderRadius: borderRadius.md,
-    paddingVertical: spacing.md,
-    borderWidth: 1,
     alignItems: 'center',
   },
   actionText: {

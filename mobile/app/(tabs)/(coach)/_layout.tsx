@@ -8,7 +8,7 @@ export default function CoachLayout() {
     <CoachDiscoveryProvider>
       <SessionProvider>
         <CreditProvider>
-          <Stack screenOptions={{ headerShown: false }}>
+          <Stack screenOptions={{ headerShown: false, contentStyle: { backgroundColor: '#0a0a0a' } }}>
             <Stack.Screen name="index" />
             <Stack.Screen name="coach-profile" />
             <Stack.Screen name="session-booking" />

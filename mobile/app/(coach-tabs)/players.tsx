@@ -56,7 +56,7 @@ function aggregatePlayers(sessions: CoachSessionResult[]): PlayerRow[] {
 
 export default function CoachPlayersScreen() {
   const router = useRouter();
-  const { coach, isLoggedIn } = useCoachAuth();
+  const { coach } = useCoachAuth();
   const [loading, setLoading] = useState(true);
   const [sessions, setSessions] = useState<CoachSessionResult[]>([]);
   const [query, setQuery] = useState('');
@@ -82,11 +82,6 @@ export default function CoachPlayersScreen() {
     void load();
   }, [load]);
 
-  useEffect(() => {
-    if (!isLoggedIn) {
-      router.replace('/(coach-tabs)/login');
-    }
-  }, [isLoggedIn, router]);
 
   const players = useMemo(() => aggregatePlayers(sessions), [sessions]);
 

@@ -57,7 +57,7 @@ function emptyBlock(defaultVenueId: string): TimeBlock {
 
 export default function CoachAvailabilityEditorScreen() {
   const router = useRouter();
-  const { coach, token, isLoggedIn } = useCoachAuth();
+  const { coach, token } = useCoachAuth();
   const [loading, setLoading] = useState(true);
   const [saving, setSaving] = useState(false);
   const [venues, setVenues] = useState<VenueOption[]>([]);
@@ -80,11 +80,6 @@ export default function CoachAvailabilityEditorScreen() {
     return getCoachAvailability(coach.id).catch(() => []);
   }, [coach?.id]);
 
-  useEffect(() => {
-    if (!isLoggedIn) {
-      router.replace('/(coach-tabs)/login');
-    }
-  }, [isLoggedIn, router]);
 
   useEffect(() => {
     let cancelled = false;

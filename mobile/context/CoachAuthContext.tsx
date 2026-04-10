@@ -29,6 +29,7 @@ interface CoachAuthState {
   }) => Promise<void>;
   logout: () => Promise<void>;
   refreshProfile: () => Promise<void>;
+  clearError: () => void;
 }
 
 const CoachAuthContext = createContext<CoachAuthState | null>(null);
@@ -58,7 +59,7 @@ export function CoachAuthProvider({ children }: { children: ReactNode }) {
   }, []);
 
   const login = useCallback(async (phone: string, password: string) => {
-    if (inFlight.current) return;
+    if (inFlight.current) throw new Error('Login already in progress');
     inFlight.current = 'login';
     setLoading(true);
     setError(null);
@@ -92,7 +93,7 @@ export function CoachAuthProvider({ children }: { children: ReactNode }) {
   }, []);
 
   const register = useCallback(async (params: Parameters<typeof coachRegister>[0]) => {
-    if (inFlight.current) return;
+    if (inFlight.current) throw new Error('Registration already in progress');
     inFlight.current = 'register';
     setLoading(true);
     setError(null);
@@ -131,6 +132,8 @@ export function CoachAuthProvider({ children }: { children: ReactNode }) {
     await AsyncStorage.multiRemove([TOKEN_KEY, COACH_KEY]);
   }, []);
 
+  const clearError = useCallback(() => setError(null), []);
+
   const refreshProfile = useCallback(async () => {
     if (!coach) return;
     try {
@@ -154,6 +157,7 @@ export function CoachAuthProvider({ children }: { children: ReactNode }) {
         register,
         logout,
         refreshProfile,
+        clearError,
       }}
     >
       {children}

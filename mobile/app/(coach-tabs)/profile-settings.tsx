@@ -59,7 +59,7 @@ function deriveMaxGroupSize(groupSizes: string[]): number {
 
 export default function CoachProfileSettingsScreen() {
   const router = useRouter();
-  const { coach, token, refreshProfile, isLoggedIn } = useCoachAuth();
+  const { coach, token, refreshProfile } = useCoachAuth();
   const [saving, setSaving] = useState(false);
 
   const [name, setName] = useState('');
@@ -99,11 +99,6 @@ export default function CoachProfileSettingsScreen() {
     hydrateFromCoach();
   }, [hydrateFromCoach]);
 
-  useEffect(() => {
-    if (!isLoggedIn) {
-      router.replace('/(coach-tabs)/login');
-    }
-  }, [isLoggedIn, router]);
 
   const onPickPhoto = useCallback(async () => {
     const perm = await ImagePicker.requestMediaLibraryPermissionsAsync();

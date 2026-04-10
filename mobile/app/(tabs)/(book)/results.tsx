@@ -1,5 +1,5 @@
 import React, { useCallback, useMemo } from 'react';
-import { View, Text, FlatList, ActivityIndicator, StyleSheet } from 'react-native';
+import { View, Text, FlatList, ActivityIndicator, StyleSheet, Animated } from 'react-native';
 import ResultsSearchTopBar from '@/components/search/ResultsSearchTopBar';
 import VenueCard from '@/components/venue/VenueCard';
 import ResultsFlowPills from '@/components/ui/ResultsFlowPills';
@@ -11,6 +11,40 @@ import {
 } from '@/mobile/lib/formatters';
 import { useCourtMap } from '@/context/CourtMapContext';
 import type { VenueResult } from '@/mobile/lib/types';
+
+function SkeletonCard({ t, delay }: { t: any; delay: number }) {
+  const opacity = useMemo(() => {
+    const anim = new Animated.Value(0.3);
+    Animated.loop(
+      Animated.sequence([
+        Animated.timing(anim, { toValue: 0.7, duration: 800, delay, useNativeDriver: true }),
+        Animated.timing(anim, { toValue: 0.3, duration: 800, useNativeDriver: true }),
+      ]),
+    ).start();
+    return anim;
+  }, [delay]);
+
+  return (
+    <Animated.View style={[skeletonStyles.card, { backgroundColor: t.bgCard, opacity }]}>
+      <View style={[skeletonStyles.image, { backgroundColor: t.bgInput }]} />
+      <View style={{ padding: 14, gap: 10 }}>
+        <View style={[skeletonStyles.line, { width: '65%', backgroundColor: t.bgInput }]} />
+        <View style={[skeletonStyles.line, { width: '90%', height: 10, backgroundColor: t.bgInput }]} />
+        <View style={{ flexDirection: 'row', gap: 8, marginTop: 4 }}>
+          <View style={[skeletonStyles.pill, { backgroundColor: t.bgInput }]} />
+          <View style={[skeletonStyles.pill, { width: 60, backgroundColor: t.bgInput }]} />
+        </View>
+      </View>
+    </Animated.View>
+  );
+}
+
+const skeletonStyles = StyleSheet.create({
+  card: { borderRadius: 16, marginBottom: 14, overflow: 'hidden' },
+  image: { height: 140, borderTopLeftRadius: 16, borderTopRightRadius: 16 },
+  line: { height: 14, borderRadius: 6 },
+  pill: { height: 24, width: 80, borderRadius: 12 },
+});
 
 export default function ResultsRoute() {
   const ctx = useCourtMap();
@@ -68,9 +102,10 @@ export default function ResultsRoute() {
   const ListEmpty = useMemo(() => {
     if (loading) {
       return (
-        <View style={styles.center}>
-          <Text style={{ fontSize: 24, marginBottom: 12 }}>🏓</Text>
-          <Text style={{ fontSize: 14, color: t.textSec }}>Searching courts...</Text>
+        <View style={{ paddingTop: 4 }}>
+          {[0, 1, 2].map((i) => (
+            <SkeletonCard key={i} t={t} delay={i * 150} />
+          ))}
         </View>
       );
     }

@@ -180,6 +180,8 @@ function useCourtMapInner() {
 
   const refetchVenues = useCallback(async () => {
     setLoading(true);
+    setVenues([]);
+    setSearchTotalResults([]);
     try {
       const dates = getNextDays(7);
       const dateStr =

@@ -336,11 +336,16 @@ export async function coachRegister(body: {
   groupSizes?: string[];
   experienceBand?: string;
 }): Promise<{ token: string; coach: CoachResult }> {
-  const res = await fetch(`${BASE}/api/coaches/register`, {
-    method: 'POST',
-    headers: { 'Content-Type': 'application/json' },
-    body: JSON.stringify(body),
-  });
+  let res: Response;
+  try {
+    res = await fetchWithTimeout(`${BASE}/api/coaches/register`, {
+      method: 'POST',
+      headers: { 'Content-Type': 'application/json' },
+      body: JSON.stringify(body),
+    });
+  } catch {
+    throw new Error(`Cannot reach server (${BASE}) in time. Check API base URL and network.`);
+  }
   if (!res.ok) {
     const msg = await readApiError(res, 'Registration failed');
     throw new Error(msg);

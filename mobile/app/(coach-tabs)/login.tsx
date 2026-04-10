@@ -5,6 +5,7 @@ import {
   Pressable,
   ScrollView,
   TextInput,
+  Keyboard,
   StyleSheet,
   ActivityIndicator,
 } from 'react-native';
@@ -13,6 +14,13 @@ import { useRouter } from 'expo-router';
 import { useCoachAuth } from '@/context/CoachAuthContext';
 import { spacing, fontSize, borderRadius } from '@/mobile/lib/theme';
 import { darkTheme as t } from '@/mobile/lib/theme';
+import WelcomePopup, { type WelcomeFeature } from '@/components/WelcomePopup';
+
+const COACH_FEATURES: WelcomeFeature[] = [
+  { icon: 'megaphone-outline', title: 'Attract new clients', subtitle: 'Grow your coaching business' },
+  { icon: 'pricetag-outline', title: 'Sell packages and boost income', subtitle: 'Offer packs and increase earnings' },
+  { icon: 'calendar-outline', title: 'Manage everything', subtitle: 'Schedule, track and stay organized' },
+];
 
 type TabMode = 'login' | 'register';
 const LANGUAGE_OPTIONS = ['English', 'Vietnamese', 'Japanese', 'Thai'] as const;
@@ -39,10 +47,11 @@ function toggleOption<T extends string>(list: T[], value: T): T[] {
 
 export default function CoachLoginScreen() {
   const router = useRouter();
-  const { login, register, loading, error } = useCoachAuth();
+  const { login, register, loading, error, clearError } = useCoachAuth();
 
   const [tab, setTab] = useState<TabMode>('login');
   const [authReady, setAuthReady] = useState(false);
+  const [showWelcome, setShowWelcome] = useState(true);
 
   useEffect(() => {
     if (!loading) setAuthReady(true);
@@ -55,7 +64,6 @@ export default function CoachLoginScreen() {
   const [regPhone, setRegPhone] = useState('');
   const [regPassword, setRegPassword] = useState('');
   const [regRate, setRegRate] = useState('');
-  const [regGroupRate, setRegGroupRate] = useState('');
   const [regSpecialties, setRegSpecialties] = useState<string[]>([]);
   const [regLanguages, setRegLanguages] = useState<string[]>([]);
   const [regFocusLevels, setRegFocusLevels] = useState<string[]>([]);
@@ -64,6 +72,15 @@ export default function CoachLoginScreen() {
   const [validationError, setValidationError] = useState<string | null>(null);
 
   const onLogin = useCallback(async () => {
+    setValidationError(null);
+    if (!loginPhone.trim()) {
+      setValidationError('Phone number is required.');
+      return;
+    }
+    if (!loginPassword) {
+      setValidationError('Password is required.');
+      return;
+    }
     try {
       await login(loginPhone.trim(), loginPassword);
       router.replace('/(coach-tabs)/today');
@@ -87,22 +104,12 @@ export default function CoachLoginScreen() {
       setValidationError('Enter a valid hourly rate.');
       return;
     }
-    let groupRate: number | undefined;
-    if (regGroupRate.trim()) {
-      const parsed = parseCurrencyInput(regGroupRate);
-      if (!Number.isFinite(parsed) || parsed < 0) {
-        setValidationError('Enter a valid group rate.');
-        return;
-      }
-      groupRate = parsed;
-    }
     try {
       await register({
         name: regName.trim(),
         phone: regPhone.trim(),
         password: regPassword,
         hourlyRate1on1: rate,
-        hourlyRateGroup: groupRate,
         specialties: regSpecialties.length ? regSpecialties : undefined,
         languages: regLanguages.length ? regLanguages : undefined,
         focusLevels: regFocusLevels.length ? regFocusLevels : undefined,
@@ -117,7 +124,6 @@ export default function CoachLoginScreen() {
     register,
     regExperienceBand,
     regFocusLevels,
-    regGroupRate,
     regGroupSizes,
     regLanguages,
     regName,
@@ -142,12 +148,19 @@ export default function CoachLoginScreen() {
 
   return (
     <SafeAreaView style={[styles.root, { backgroundColor: t.bg }]} edges={['top', 'bottom']}>
+      <WelcomePopup
+        visible={showWelcome}
+        onDismiss={() => setShowWelcome(false)}
+        headline={'Get more clients.\nEarn more'}
+        subheadline="Turn sessions into steady income"
+        features={COACH_FEATURES}
+      />
       <ScrollView
         keyboardShouldPersistTaps="handled"
         contentContainerStyle={styles.scrollContent}
         showsVerticalScrollIndicator={false}
       >
-        <Pressable onPress={() => router.replace('/onboarding')} style={styles.backBtn}>
+        <Pressable onPress={() => router.replace('/onboarding?start=role')} style={styles.backBtn}>
           <Text style={[styles.backText, { color: t.textSec }]}>← Back</Text>
         </Pressable>
 
@@ -157,6 +170,7 @@ export default function CoachLoginScreen() {
           <Pressable
             onPress={() => {
               setValidationError(null);
+              clearError();
               setTab('login');
             }}
             style={({ pressed }) => [
@@ -170,6 +184,7 @@ export default function CoachLoginScreen() {
           <Pressable
             onPress={() => {
               setValidationError(null);
+              clearError();
               setTab('register');
             }}
             style={({ pressed }) => [
@@ -244,15 +259,6 @@ export default function CoachLoginScreen() {
               keyboardType="number-pad"
               style={[styles.input, { backgroundColor: t.bgInput, borderColor: t.border, color: t.text }]}
             />
-            <Text style={[styles.label, { color: t.textSec }]}>Hourly rate (group, optional)</Text>
-            <TextInput
-              value={regGroupRate}
-              onChangeText={(v) => setRegGroupRate(formatCurrencyInput(v))}
-              placeholder="e.g. 250,000"
-              placeholderTextColor={t.textMuted}
-              keyboardType="number-pad"
-              style={[styles.input, { backgroundColor: t.bgInput, borderColor: t.border, color: t.text }]}
-            />
             <Text style={[styles.label, { color: t.textSec }]}>Languages</Text>
             <View style={styles.chipWrap}>
               {LANGUAGE_OPTIONS.map((option) => (
@@ -260,7 +266,10 @@ export default function CoachLoginScreen() {
                   key={option}
                   label={option}
                   selected={regLanguages.includes(option)}
-                  onPress={() => setRegLanguages((prev) => toggleOption(prev, option))}
+                  onPress={() => {
+                    Keyboard.dismiss();
+                    setRegLanguages((prev) => toggleOption(prev, option));
+                  }}
                 />
               ))}
             </View>

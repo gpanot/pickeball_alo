@@ -66,7 +66,7 @@ export default function CoachSessionDetailScreen() {
   const sessionId =
     typeof params.sessionId === 'string' ? params.sessionId : params.sessionId?.[0];
 
-  const { coach, token, isLoggedIn } = useCoachAuth();
+  const { coach, token } = useCoachAuth();
   const base = API_BASE_URL.replace(/\/$/, '');
 
   const [loading, setLoading] = useState(true);
@@ -96,11 +96,6 @@ export default function CoachSessionDetailScreen() {
     void load();
   }, [load]);
 
-  useEffect(() => {
-    if (!isLoggedIn) {
-      router.replace('/(coach-tabs)/login');
-    }
-  }, [isLoggedIn, router]);
 
   const isCoachSession = session && coach && session.coachId === coach.id;
 

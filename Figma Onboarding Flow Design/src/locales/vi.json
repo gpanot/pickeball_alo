@@ -1,0 +1,28 @@
+{
+  "onboarding": {
+    "slide1": {
+      "tagline": "[Translation TBD]",
+      "headline": "[Translation TBD]",
+      "subtext": "[Translation TBD]",
+      "cta": "[Translation TBD]",
+      "skip": "[Translation TBD]"
+    },
+    "slide2": {
+      "tagline": "[Translation TBD]",
+      "headline": "[Translation TBD]",
+      "subtext": "[Translation TBD]",
+      "trustNote": "[Translation TBD]",
+      "noFakeStars": "[Translation TBD]",
+      "cta": "[Translation TBD]",
+      "back": "[Translation TBD]"
+    },
+    "slide3": {
+      "tagline": "[Translation TBD]",
+      "headline": "[Translation TBD]",
+      "subtext": "[Translation TBD]",
+      "urgencyNote": "[Translation TBD]",
+      "cta": "[Translation TBD]",
+      "back": "[Translation TBD]"
+    }
+  }
+}
