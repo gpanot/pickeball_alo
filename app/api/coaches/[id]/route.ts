@@ -26,6 +26,8 @@ const publicCoachSelect = {
   reviewCount: true,
   isActive: true,
   isProfilePublic: true,
+  phoneVerified: true,
+  gender: true,
   hourlyRate1on1: true,
   hourlyRateGroup: true,
   maxGroupSize: true,
@@ -41,6 +43,8 @@ const publicCoachSelect = {
           address: true,
           lat: true,
           lng: true,
+          priceMin: true,
+          _count: { select: { courts: true } },
         },
       },
     },
@@ -78,6 +82,9 @@ const patchableKeys = new Set([
   'bankAccountNumber',
   'bankBin',
   'isProfilePublic',
+  'phoneVerified',
+  'isPhoneVerified',
+  'gender',
 ]);
 
 export async function GET(
@@ -210,6 +217,19 @@ export async function PATCH(
           }
           data.isProfilePublic = v;
           break;
+        case 'phoneVerified':
+        case 'isPhoneVerified':
+          if (typeof v !== 'boolean') {
+            return NextResponse.json({ error: `${key} must be a boolean` }, { status: 400 });
+          }
+          data.phoneVerified = v;
+          break;
+        case 'gender':
+          if (v !== null && (typeof v !== 'string' || !['male', 'female'].includes(v))) {
+            return NextResponse.json({ error: 'gender must be "male", "female", or null' }, { status: 400 });
+          }
+          data.gender = v as string | null;
+          break;
         default:
           break;
       }
@@ -227,6 +247,17 @@ export async function PATCH(
       if (existing) {
         return NextResponse.json({ error: 'Email already in use' }, { status: 409 });
       }
+    }
+
+    let wasPhoneVerified = false;
+    let verifiedPhone = '';
+    if (data.phoneVerified === true) {
+      const existingCoach = await prisma.coach.findUnique({
+        where: { id },
+        select: { phoneVerified: true, phone: true },
+      });
+      wasPhoneVerified = existingCoach?.phoneVerified === true;
+      verifiedPhone = existingCoach?.phone ?? '';
     }
 
     const updated = await prisma.coach.update({
@@ -250,6 +281,8 @@ export async function PATCH(
         ratingOverall: true,
         reviewCount: true,
         isProfilePublic: true,
+        phoneVerified: true,
+        gender: true,
         hourlyRate1on1: true,
         hourlyRateGroup: true,
         maxGroupSize: true,
@@ -261,6 +294,19 @@ export async function PATCH(
         bankBin: true,
       },
     });
+
+    if (data.phoneVerified === true && !wasPhoneVerified && updated.phoneVerified) {
+      await prisma.phoneVerificationEvent.create({
+        data: {
+          subjectType: 'coach',
+          subjectId: updated.id,
+          phone: verifiedPhone || updated.phone,
+          actorType: 'coach',
+          actorId: coachAuth.sub,
+          source: 'mobile-profile-otp',
+        },
+      });
+    }
 
     return NextResponse.json({ coach: updated });
   } catch (err) {

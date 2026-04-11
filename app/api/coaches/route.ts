@@ -76,6 +76,8 @@ const coachListSelect = {
           address: true,
           lat: true,
           lng: true,
+          priceMin: true,
+          _count: { select: { courts: true } },
         },
       },
     },
