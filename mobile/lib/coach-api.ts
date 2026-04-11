@@ -2,6 +2,7 @@ import type {
   CoachResult,
   CoachSessionResult,
   CoachAvailabilityResult,
+  CreditPackResult,
   CreditResult,
   CoachReviewResult,
   CoachVenueInviteResult,
@@ -22,20 +23,60 @@ async function fetchWithTimeout(input: RequestInfo | URL, init?: RequestInit): P
 }
 
 async function readApiError(res: Response, fallback: string): Promise<string> {
-  const contentType = res.headers.get('content-type') ?? '';
+  const contentType = (res.headers.get('content-type') ?? '').toLowerCase();
   if (contentType.includes('application/json')) {
     const err = await res.json().catch(() => ({}));
     if (typeof err?.error === 'string' && err.error.trim().length > 0) return err.error;
     if (typeof err?.message === 'string' && err.message.trim().length > 0) return err.message;
-  } else {
-    const text = await res.text().catch(() => '');
-    if (text.trim().length > 0) return text.slice(0, 160);
+    return fallback;
   }
+
+  // Do not leak HTML error pages/proxy responses into the UI.
+  if (contentType.includes('text/html')) {
+    return fallback;
+  }
+
+  const text = await res.text().catch(() => '');
+  if (text.trim().length > 0) return text.slice(0, 120);
   return fallback;
 }
 
 function authHeaders(token: string): HeadersInit {
   return { Authorization: `Bearer ${token}`, 'Content-Type': 'application/json' };
+}
+
+function normalizeCoach(raw: Record<string, unknown>): CoachResult {
+  if (raw.courtLinks && !raw.courts) {
+    const links = raw.courtLinks as Array<{
+      id: string;
+      venueId: string;
+      courtIds: string[];
+      isActive: boolean;
+      venue?: {
+        id: string;
+        name: string;
+        address: string;
+        lat?: number | null;
+        lng?: number | null;
+        priceMin?: number | null;
+        _count?: { courts?: number };
+      };
+    }>;
+    raw.courts = links.map((l) => ({
+      id: l.id,
+      venueId: l.venue?.id ?? l.venueId,
+      venueName: l.venue?.name ?? '',
+      venueAddress: l.venue?.address ?? '',
+      courtIds: l.courtIds ?? [],
+      isActive: l.isActive,
+      venueLat: l.venue?.lat ?? null,
+      venueLng: l.venue?.lng ?? null,
+      venuePriceMin: l.venue?.priceMin ?? null,
+      venueCourtCount: l.venue?._count?.courts ?? 0,
+    }));
+    delete raw.courtLinks;
+  }
+  return raw as unknown as CoachResult;
 }
 
 export async function searchCoaches(params: {
@@ -63,14 +104,18 @@ export async function searchCoaches(params: {
   if (params.offset != null) qs.set('offset', String(params.offset));
   const res = await fetch(`${BASE}/api/coaches?${qs}`);
   if (!res.ok) throw new Error('Failed to search coaches');
-  return res.json();
+  const data = await res.json();
+  return {
+    coaches: (data.coaches ?? []).map((c: Record<string, unknown>) => normalizeCoach(c)),
+    total: data.total ?? 0,
+  };
 }
 
 export async function getCoach(id: string): Promise<CoachResult> {
   const res = await fetch(`${BASE}/api/coaches/${id}`);
   if (!res.ok) throw new Error('Failed to fetch coach');
   const data = await res.json();
-  return data.coach ?? data;
+  return normalizeCoach(data.coach ?? data);
 }
 
 export async function getCoachAvailability(
@@ -335,6 +380,7 @@ export async function coachRegister(body: {
   focusLevels?: string[];
   groupSizes?: string[];
   experienceBand?: string;
+  gender?: string;
 }): Promise<{ token: string; coach: CoachResult }> {
   let res: Response;
   try {
@@ -399,9 +445,32 @@ export async function updateCoachProfile(
     body: JSON.stringify(body),
   });
   if (!res.ok) {
-    const err = await res.json().catch(() => ({}));
-    throw new Error(err.error || 'Failed to update profile');
+    if (__DEV__) {
+      const bodyPreview = await res.clone().text().catch(() => '');
+      console.log('[updateCoachProfile] non-ok response', {
+        coachId,
+        status: res.status,
+        contentType: res.headers.get('content-type'),
+        bodyPreview: bodyPreview.slice(0, 180),
+      });
+    }
+    const msg = await readApiError(res, 'Failed to update profile');
+    throw new Error(msg);
   }
+  const data = await res.json();
+  return data.coach ?? data;
+}
+
+export async function verifyCoachPhone(
+  coachId: string,
+  token: string,
+): Promise<CoachResult> {
+  const res = await fetch(`${BASE}/api/coaches/${coachId}`, {
+    method: 'PATCH',
+    headers: authHeaders(token),
+    body: JSON.stringify({ phoneVerified: true }),
+  });
+  if (!res.ok) throw new Error('Failed to sync phone verification');
   const data = await res.json();
   return data.coach ?? data;
 }
@@ -490,6 +559,114 @@ export async function saveCoachAvailability(
   if (!res.ok) {
     const err = await res.json().catch(() => ({}));
     throw new Error(err.error || 'Failed to save availability');
+  }
+}
+
+// ─── Credit Pack CRUD (coach-side) ──────────────────────────────────────────
+
+export async function listCreditPacks(coachId: string, token: string): Promise<CreditPackResult[]> {
+  const url = `${BASE}/api/coaches/${coachId}/credit-packs`;
+  if (__DEV__) console.log('[listCreditPacks] GET', url);
+  let res: Response;
+  try {
+    res = await fetchWithTimeout(url, {
+      headers: authHeaders(token),
+    });
+  } catch (e) {
+    if (__DEV__) console.error('[listCreditPacks] fetch threw:', e);
+    throw new Error(`Network error loading packs: ${e instanceof Error ? e.message : String(e)}`);
+  }
+  if (__DEV__) console.log('[listCreditPacks] status', res.status);
+  if (!res.ok) {
+    const msg = await readApiError(res, `Load packs failed (${res.status})`);
+    throw new Error(msg);
+  }
+  const data = await res.json();
+  return data.packs ?? [];
+}
+
+export async function createCreditPack(
+  coachId: string,
+  token: string,
+  body: { name: string; creditCount: number; price: number; discountPercent?: number | null },
+): Promise<CreditPackResult> {
+  const url = `${BASE}/api/coaches/${coachId}/credit-packs`;
+  if (__DEV__) {
+    console.log('[createCreditPack] POST', url);
+    console.log('[createCreditPack] body', JSON.stringify(body));
+    console.log('[createCreditPack] token prefix', token?.slice(0, 20) + '...');
+  }
+  let res: Response;
+  try {
+    res = await fetchWithTimeout(url, {
+      method: 'POST',
+      headers: authHeaders(token),
+      body: JSON.stringify(body),
+    });
+  } catch (e) {
+    if (__DEV__) console.error('[createCreditPack] fetch threw:', e);
+    throw new Error(`Network error creating pack: ${e instanceof Error ? e.message : String(e)}`);
+  }
+  if (__DEV__) {
+    console.log('[createCreditPack] status', res.status, res.statusText);
+    console.log('[createCreditPack] content-type', res.headers.get('content-type'));
+  }
+  if (!res.ok) {
+    const msg = await readApiError(res, `Create pack failed (${res.status})`);
+    if (__DEV__) console.error('[createCreditPack] error:', msg);
+    throw new Error(msg);
+  }
+  const data = await res.json();
+  return data.pack ?? data;
+}
+
+export async function updateCreditPack(
+  coachId: string,
+  token: string,
+  body: {
+    packId: string;
+    name?: string;
+    creditCount?: number;
+    price?: number;
+    discountPercent?: number | null;
+    isActive?: boolean;
+  },
+): Promise<CreditPackResult> {
+  let res: Response;
+  try {
+    res = await fetchWithTimeout(`${BASE}/api/coaches/${coachId}/credit-packs`, {
+      method: 'PATCH',
+      headers: authHeaders(token),
+      body: JSON.stringify(body),
+    });
+  } catch (e) {
+    throw new Error(`Network error updating pack: ${e instanceof Error ? e.message : String(e)}`);
+  }
+  if (!res.ok) {
+    const msg = await readApiError(res, `Update pack failed (${res.status})`);
+    throw new Error(msg);
+  }
+  const data = await res.json();
+  return data.pack ?? data;
+}
+
+export async function deleteCreditPack(
+  coachId: string,
+  packId: string,
+  token: string,
+): Promise<void> {
+  let res: Response;
+  try {
+    res = await fetchWithTimeout(
+      `${BASE}/api/coaches/${coachId}/credit-packs?packId=${encodeURIComponent(packId)}`,
+      { method: 'DELETE', headers: authHeaders(token) },
+    );
+  } catch (e) {
+    throw new Error(`Network error deleting pack: ${e instanceof Error ? e.message : String(e)}`);
+  }
+  if (!res.ok) {
+    const msg = await readApiError(res, `Delete pack failed (${res.status})`);
+    throw new Error(msg);
   }
 }
 

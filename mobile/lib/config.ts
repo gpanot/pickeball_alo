@@ -95,3 +95,9 @@ const resolved =
     : rawBaseUrl;
 
 export const API_BASE_URL = stripTrailingSlash(resolved);
+
+if (__DEV__) {
+  console.log('[config] rawBaseUrl =', rawBaseUrl);
+  console.log('[config] resolved   =', resolved);
+  console.log('[config] API_BASE_URL =', API_BASE_URL);
+}

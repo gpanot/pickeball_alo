@@ -26,9 +26,11 @@ interface CoachAuthState {
     focusLevels?: string[];
     groupSizes?: string[];
     experienceBand?: string;
+    gender?: string;
   }) => Promise<void>;
   logout: () => Promise<void>;
   refreshProfile: () => Promise<void>;
+  patchCoach: (partial: Partial<CoachResult>) => void;
   clearError: () => void;
 }
 
@@ -145,6 +147,15 @@ export function CoachAuthProvider({ children }: { children: ReactNode }) {
     }
   }, [coach]);
 
+  const patchCoach = useCallback((partial: Partial<CoachResult>) => {
+    setCoach((prev) => {
+      if (!prev) return prev;
+      const merged = { ...prev, ...partial };
+      AsyncStorage.setItem(COACH_KEY, JSON.stringify(merged)).catch(() => {});
+      return merged;
+    });
+  }, []);
+
   return (
     <CoachAuthContext.Provider
       value={{
@@ -157,6 +168,7 @@ export function CoachAuthProvider({ children }: { children: ReactNode }) {
         register,
         logout,
         refreshProfile,
+        patchCoach,
         clearError,
       }}
     >

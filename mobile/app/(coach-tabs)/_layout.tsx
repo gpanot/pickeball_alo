@@ -34,6 +34,10 @@ function CoachAuthGate({ children }: { children: React.ReactNode }) {
     }
   }, [isLoggedIn, loading, currentRoute, router]);
 
+  if (!loading && !isLoggedIn && currentRoute !== 'login') {
+    return null;
+  }
+
   return <>{children}</>;
 }
 

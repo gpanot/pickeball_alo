@@ -69,6 +69,7 @@ export default function TabLayout() {
         <Tabs.Screen name="(coach)" options={{ title: 'Coach' }} />
         <Tabs.Screen name="(bookings)" options={{ title: 'Bookings' }} />
         <Tabs.Screen name="profile" options={{ href: null }} />
+        <Tabs.Screen name="edit-gear" options={{ href: null }} />
       </Tabs>
     </View>
   );

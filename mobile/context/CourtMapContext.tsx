@@ -7,8 +7,9 @@ import React, {
   useRef,
   useState,
 } from 'react';
-import { Alert } from 'react-native';
+import { Alert, Platform } from 'react-native';
 import { useRouter, useSegments, type Href } from 'expo-router';
+import * as Location from 'expo-location';
 import {
   getVenueCatalogCount,
   searchVenues,
@@ -44,6 +45,8 @@ function useCourtMapInner() {
   const [userId, setUserId] = useAsyncStorage('cm_userId', '');
   const [userName, setUserName] = useAsyncStorage('cm_userName', '');
   const [userPhone, setUserPhone] = useAsyncStorage('cm_userPhone', '');
+  const [userGender, setUserGender] = useAsyncStorage<string>('cm_userGender', '');
+  const [isPlayerPhoneVerified, setIsPlayerPhoneVerified] = useAsyncStorage('cm_phoneVerified', false);
 
   const [searchQuery, setSearchQuery] = useState('');
   const [selectedDate, setSelectedDate] = useState(0);
@@ -81,6 +84,23 @@ function useCourtMapInner() {
   /** User geolocation cached across tab switches (set once). */
   const [mapUserLoc, setMapUserLoc] = useState<{ lat: number; lng: number } | null>(null);
   const mapGeoInitDone = useRef(false);
+
+  useEffect(() => {
+    if (mapUserLoc) return;
+    (async () => {
+      try {
+        const { status } = await Location.requestForegroundPermissionsAsync();
+        if (status !== 'granted') return;
+        const last = await Location.getLastKnownPositionAsync();
+        if (last) {
+          setMapUserLoc({ lat: last.coords.latitude, lng: last.coords.longitude });
+          return;
+        }
+        const pos = await Location.getCurrentPositionAsync({ accuracy: Location.Accuracy.Balanced });
+        setMapUserLoc({ lat: pos.coords.latitude, lng: pos.coords.longitude });
+      } catch { /* permission denied or unavailable */ }
+    })();
+  }, [mapUserLoc]);
 
   const t = darkTheme;
   const savedSet = useMemo(() => new Set(savedIds), [savedIds]);
@@ -430,14 +450,35 @@ function useCourtMapInner() {
   );
 
   const handleSaveProfile = useCallback(
-    (name: string, phone: string, id?: string) => {
+    (
+      name: string,
+      phone: string,
+      id?: string,
+      phoneVerified?: boolean,
+      gender?: string | null,
+    ) => {
       if (id?.trim()) {
         void setUserId(id.trim());
       }
+      const normalizedPhone = phone.trim();
+      const previousPhone = userPhone.trim();
       void setUserName(name);
-      void setUserPhone(phone);
+      void setUserPhone(normalizedPhone);
+      if (gender !== undefined) {
+        const g = typeof gender === 'string' ? gender.toLowerCase().trim() : '';
+        if (g === 'male' || g === 'female') {
+          void setUserGender(g);
+        } else if (gender === null || gender === '') {
+          void setUserGender('');
+        }
+      }
+      if (typeof phoneVerified === 'boolean') {
+        void setIsPlayerPhoneVerified(phoneVerified);
+      } else if (normalizedPhone !== previousPhone) {
+        void setIsPlayerPhoneVerified(false);
+      }
     },
-    [setUserId, setUserName, setUserPhone],
+    [setUserId, setUserName, setUserPhone, userPhone, setUserGender, setIsPlayerPhoneVerified],
   );
 
   const handleSavedBookConfirm = useCallback(async () => {
@@ -578,6 +619,8 @@ function useCourtMapInner() {
     void setUserId(generateId());
     void setUserName('');
     void setUserPhone('');
+    void setUserGender('');
+    void setIsPlayerPhoneVerified(false);
     void setSavedIds([]);
     setBookings([]);
     setSelectedSlots(new Set());
@@ -586,7 +629,7 @@ function useCourtMapInner() {
     setSavedSearchOpen(false);
     setSavedBookVenue(null);
     router.replace('/onboarding');
-  }, [router, setSavedIds, setUserId, setUserName, setUserPhone]);
+  }, [router, setSavedIds, setUserId, setUserName, setUserPhone, setUserGender, setIsPlayerPhoneVerified]);
 
   return useMemo(() => ({
     t,
@@ -599,6 +642,9 @@ function useCourtMapInner() {
     userId,
     userName,
     userPhone,
+    userGender,
+    isPlayerPhoneVerified,
+    setIsPlayerPhoneVerified,
     searchQuery,
     setSearchQuery,
     selectedDate,
@@ -664,7 +710,7 @@ function useCourtMapInner() {
     backFromProfile,
   }), [
     t, segments, hideTabBar, savedViaResultsFlow,
-    savedSet, toggleSaved, userId, userName, userPhone,
+    savedSet, toggleSaved, userId, userName, userPhone, userGender, isPlayerPhoneVerified, setIsPlayerPhoneVerified,
     searchQuery, selectedDate, selectedDuration, selectedTime, sortBy,
     venues, exploreVenues, catalogVenueCount, loading, bookings, bookingsLoading,
     detailVenue, detailJumpToConfirm, detailRefreshing, selectedSlots,

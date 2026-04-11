@@ -1,4 +1,4 @@
-import React, { useEffect, useState } from 'react';
+import React, { useEffect, useState, useRef, useCallback } from 'react';
 import {
   View,
   Text,
@@ -13,6 +13,10 @@ import { BackIcon, CalendarIcon, HeartIcon, CoachIcon } from '@/components/Icons
 import { Ionicons } from '@expo/vector-icons';
 import ScreenTopBar from '@/components/ui/ScreenTopBar';
 import { useCourtMap } from '@/context/CourtMapContext';
+import PhoneFieldVerificationSection from '@/components/PhoneFieldVerificationSection';
+import { verifyPlayerPhone } from '@/mobile/lib/player-api';
+
+
 
 export default function ProfileRoute() {
   const router = useRouter();
@@ -21,6 +25,9 @@ export default function ProfileRoute() {
     t,
     userName,
     userPhone,
+    userGender,
+    isPlayerPhoneVerified,
+    setIsPlayerPhoneVerified,
     backFromProfile,
     handleSaveProfile,
     loadBookings,
@@ -30,12 +37,45 @@ export default function ProfileRoute() {
 
   const [name, setName] = useState(userName);
   const [phone, setPhone] = useState(userPhone);
-  const [saved, setSaved] = useState(false);
+  const [gender, setGender] = useState<'male' | 'female' | null>(() =>
+    userGender === 'female' ? 'female' : userGender === 'male' ? 'male' : null,
+  );
+
+  const skipDebouncedSaveRef = useRef(true);
+  const namePhoneDebounceRef = useRef<ReturnType<typeof setTimeout> | null>(null);
 
   useEffect(() => {
     setName(userName);
     setPhone(userPhone);
-  }, [userName, userPhone]);
+    setGender(userGender === 'female' ? 'female' : userGender === 'male' ? 'male' : null);
+  }, [userName, userPhone, userGender]);
+
+  const persistNamePhone = useCallback(() => {
+    handleSaveProfile(name.trim(), phone.trim());
+  }, [handleSaveProfile, name, phone]);
+
+  useEffect(() => {
+    if (skipDebouncedSaveRef.current) {
+      skipDebouncedSaveRef.current = false;
+      return;
+    }
+    if (namePhoneDebounceRef.current) clearTimeout(namePhoneDebounceRef.current);
+    namePhoneDebounceRef.current = setTimeout(() => {
+      namePhoneDebounceRef.current = null;
+      persistNamePhone();
+    }, 500);
+    return () => {
+      if (namePhoneDebounceRef.current) clearTimeout(namePhoneDebounceRef.current);
+    };
+  }, [name, phone, persistNamePhone]);
+
+  const onSelectGender = useCallback(
+    (g: 'male' | 'female') => {
+      setGender(g);
+      handleSaveProfile(name.trim(), phone.trim(), undefined, undefined, g);
+    },
+    [handleSaveProfile, name, phone],
+  );
 
   const inputStyle = {
     width: '100%' as const,
@@ -74,27 +114,46 @@ export default function ProfileRoute() {
             />
           </View>
           <View>
-            <Text style={[styles.label, { color: t.textMuted }]}>Phone</Text>
-            <TextInput
-              style={inputStyle}
-              value={phone}
-              onChangeText={setPhone}
-              placeholder="Phone number"
-              placeholderTextColor={t.textMuted}
-              keyboardType="phone-pad"
-            />
+            <Text style={[styles.label, { color: t.textMuted }]}>Gender</Text>
+            <View style={styles.genderRow}>
+              {(['male', 'female'] as const).map((g) => {
+                const active = gender === g;
+                return (
+                  <Pressable
+                    key={g}
+                    onPress={() => onSelectGender(g)}
+                    style={[
+                      styles.genderBtn,
+                      {
+                        backgroundColor: active ? t.accentBg : t.bgInput,
+                        borderColor: active ? t.accent : t.border,
+                      },
+                    ]}
+                  >
+                    <Text style={[styles.genderBtnText, { color: active ? t.accent : t.textSec }]}>
+                      {g === 'male' ? 'Man' : 'Woman'}
+                    </Text>
+                  </Pressable>
+                );
+              })}
+            </View>
           </View>
         </View>
-        <Pressable
-          onPress={() => {
-            handleSaveProfile(name.trim(), phone.trim());
-            setSaved(true);
-            setTimeout(() => setSaved(false), 2000);
-          }}
-          style={[styles.saveBtn, { backgroundColor: t.accent }]}
-        >
-          <Text style={styles.saveBtnText}>{saved ? '✓ SAVED' : 'SAVE'}</Text>
-        </Pressable>
+        <View style={{ marginTop: 8 }}>
+          <PhoneFieldVerificationSection
+            theme={t}
+            phone={phone}
+            onPhoneChange={setPhone}
+            editable
+            verified={Boolean(isPlayerPhoneVerified)}
+            onVerified={() => {
+              setIsPlayerPhoneVerified(true);
+              handleSaveProfile(name.trim(), phone.trim(), undefined, true);
+              verifyPlayerPhone({ phone: phone.trim(), name: name.trim() || userName.trim() }).catch(() => {});
+            }}
+          />
+        </View>
+
         <View style={{ gap: 10, marginTop: 24 }}>
           <Pressable
             onPress={() => {
@@ -114,6 +173,13 @@ export default function ProfileRoute() {
           >
             <HeartIcon color={t.accent} />
             <Text style={[styles.linkText, { color: t.text }]}>Saved Courts</Text>
+          </Pressable>
+          <Pressable
+            onPress={() => router.push('/(tabs)/edit-gear' as any)}
+            style={[styles.link, { backgroundColor: t.bgCard, borderColor: t.border }]}
+          >
+            <Ionicons name="shirt-outline" size={20} color={t.accent} />
+            <Text style={[styles.linkText, { color: t.text }]}>My Gear</Text>
           </Pressable>
           <Pressable
             onPress={() => router.push('/(tabs)/(coach)/my-credits' as any)}
@@ -178,13 +244,6 @@ const styles = StyleSheet.create({
     letterSpacing: 1,
     marginBottom: 6,
   },
-  saveBtn: {
-    paddingVertical: 14,
-    paddingHorizontal: 20,
-    borderRadius: 14,
-    alignItems: 'center',
-  },
-  saveBtnText: { color: '#000', fontWeight: '800', fontSize: 15 },
   link: {
     flexDirection: 'row',
     alignItems: 'center',
@@ -195,4 +254,13 @@ const styles = StyleSheet.create({
     borderWidth: 1,
   },
   linkText: { fontSize: 15, fontWeight: '600' },
+  genderRow: { flexDirection: 'row', gap: 10 },
+  genderBtn: {
+    flex: 1,
+    paddingVertical: 14,
+    borderRadius: 12,
+    borderWidth: 1,
+    alignItems: 'center',
+  },
+  genderBtnText: { fontSize: 15, fontWeight: '700' },
 });

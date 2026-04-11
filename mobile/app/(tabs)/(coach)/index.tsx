@@ -5,7 +5,6 @@ import {
   TextInput,
   Pressable,
   FlatList,
-  ScrollView,
   ActivityIndicator,
   StyleSheet,
 } from 'react-native';
@@ -18,34 +17,58 @@ import { SearchIcon } from '@/components/Icons';
 import { spacing, fontSize, borderRadius } from '@/mobile/lib/theme';
 import type { CoachResult } from '@/mobile/lib/coach-types';
 
-const SPECIALTIES = ['All', 'Beginner', 'Advanced', 'Drills', 'Match Play', 'Kids'] as const;
-const SORTS = [
+type SortKey = 'rating' | 'price' | 'nearby';
+const SORTS: { key: SortKey; label: string }[] = [
   { key: 'rating', label: 'Top Rated' },
+  { key: 'nearby', label: 'Nearby' },
   { key: 'price', label: 'Lowest Price' },
-] as const;
+];
+
+function haversineKm(lat1: number, lng1: number, lat2: number, lng2: number): number {
+  const toRad = (d: number) => (d * Math.PI) / 180;
+  const R = 6371;
+  const dLat = toRad(lat2 - lat1);
+  const dLng = toRad(lng2 - lng1);
+  const a = Math.sin(dLat / 2) ** 2 + Math.cos(toRad(lat1)) * Math.cos(toRad(lat2)) * Math.sin(dLng / 2) ** 2;
+  return R * 2 * Math.atan2(Math.sqrt(a), Math.sqrt(1 - a));
+}
+
+function closestCourtDistance(
+  coach: CoachResult,
+  userLoc: { lat: number; lng: number } | null,
+): number | null {
+  if (!userLoc || !coach.courts?.length) return null;
+  let min = Infinity;
+  for (const c of coach.courts) {
+    if (c.venueLat != null && c.venueLng != null) {
+      const d = haversineKm(userLoc.lat, userLoc.lng, c.venueLat, c.venueLng);
+      if (d < min) min = d;
+    }
+  }
+  return min === Infinity ? null : min;
+}
 
 export default function CoachListScreen() {
   const router = useRouter();
-  const { t } = useCourtMap();
+  const { t, mapUserLoc } = useCourtMap();
   const { coaches, total, loading, search, loadMore } = useCoachDiscovery();
 
   const [query, setQuery] = useState('');
-  const [selectedSpecialty, setSelectedSpecialty] = useState('All');
-  const [selectedSort, setSelectedSort] = useState<'rating' | 'price'>('rating');
+  const [selectedSort, setSelectedSort] = useState<SortKey>('rating');
   const debounceRef = useRef<ReturnType<typeof setTimeout> | null>(null);
 
   const doSearch = useCallback(
-    (q: string, specialty: string, sort: 'rating' | 'price') => {
-      const params: Record<string, unknown> = { sort };
+    (q: string, sort: SortKey) => {
+      const apiSort = sort === 'nearby' ? 'rating' : sort;
+      const params: Record<string, unknown> = { sort: apiSort };
       if (q.trim()) params.q = q.trim();
-      if (specialty !== 'All') params.specialty = specialty;
       search(params);
     },
     [search],
   );
 
   useEffect(() => {
-    doSearch('', 'All', 'rating');
+    doSearch('', 'rating');
   }, [doSearch]);
 
   const onQueryChange = useCallback(
@@ -53,27 +76,28 @@ export default function CoachListScreen() {
       setQuery(text);
       if (debounceRef.current) clearTimeout(debounceRef.current);
       debounceRef.current = setTimeout(() => {
-        doSearch(text, selectedSpecialty, selectedSort);
+        doSearch(text, selectedSort);
       }, 350);
     },
-    [doSearch, selectedSpecialty, selectedSort],
-  );
-
-  const onSpecialtyPress = useCallback(
-    (s: string) => {
-      setSelectedSpecialty(s);
-      doSearch(query, s, selectedSort);
-    },
-    [doSearch, query, selectedSort],
+    [doSearch, selectedSort],
   );
 
   const onSortPress = useCallback(
-    (s: 'rating' | 'price') => {
+    (s: SortKey) => {
       setSelectedSort(s);
-      doSearch(query, selectedSpecialty, s);
+      doSearch(query, s);
     },
-    [doSearch, query, selectedSpecialty],
+    [doSearch, query],
   );
+
+  const sortedCoaches = useMemo(() => {
+    if (selectedSort !== 'nearby') return coaches;
+    return [...coaches].sort((a, b) => {
+      const da = closestCourtDistance(a, mapUserLoc) ?? Infinity;
+      const db = closestCourtDistance(b, mapUserLoc) ?? Infinity;
+      return da - db;
+    });
+  }, [coaches, selectedSort, mapUserLoc]);
 
   const onCoachPress = useCallback(
     (coach: CoachResult) => {
@@ -95,12 +119,13 @@ export default function CoachListScreen() {
           ratingOverall={item.ratingOverall}
           reviewCount={item.reviewCount}
           hourlyRate={item.hourlyRate1on1}
+          distanceKm={closestCourtDistance(item, mapUserLoc)}
           onPress={() => onCoachPress(item)}
           theme={t}
         />
       </View>
     ),
-    [t, onCoachPress],
+    [t, onCoachPress, mapUserLoc],
   );
 
   const keyExtractor = useCallback((item: CoachResult) => item.id, []);
@@ -121,42 +146,13 @@ export default function CoachListScreen() {
           />
         </View>
 
-        <ScrollView
-          horizontal
-          showsHorizontalScrollIndicator={false}
-          contentContainerStyle={styles.chipScroll}
-        >
-          {SPECIALTIES.map((s) => {
-            const active = s === selectedSpecialty;
-            return (
-              <Pressable
-                key={s}
-                onPress={() => onSpecialtyPress(s)}
-                style={[
-                  styles.filterChip,
-                  {
-                    backgroundColor: active ? t.accentBgStrong : t.bgCard,
-                    borderColor: active ? t.accent : t.border,
-                  },
-                ]}
-              >
-                <Text
-                  style={[styles.filterChipText, { color: active ? t.accent : t.textSec }]}
-                >
-                  {s}
-                </Text>
-              </Pressable>
-            );
-          })}
-        </ScrollView>
-
         <View style={styles.sortRow}>
           {SORTS.map((s) => {
             const active = s.key === selectedSort;
             return (
               <Pressable
                 key={s.key}
-                onPress={() => onSortPress(s.key as 'rating' | 'price')}
+                onPress={() => onSortPress(s.key)}
                 style={[
                   styles.sortPill,
                   {
@@ -178,7 +174,7 @@ export default function CoachListScreen() {
         </View>
       </View>
     ),
-    [query, selectedSpecialty, selectedSort, total, t, onQueryChange, onSpecialtyPress, onSortPress],
+    [query, selectedSort, total, t, onQueryChange, onSortPress],
   );
 
   const ListEmpty = useMemo(() => {
@@ -208,7 +204,7 @@ export default function CoachListScreen() {
         <Text style={[styles.title, { color: t.text }]}>Find a Coach</Text>
       </View>
       <FlatList
-        data={coaches}
+        data={sortedCoaches}
         keyExtractor={keyExtractor}
         renderItem={renderCoach}
         ListHeaderComponent={ListHeader}
@@ -250,20 +246,6 @@ const styles = StyleSheet.create({
     flex: 1,
     fontSize: fontSize.md,
     paddingVertical: 0,
-  },
-  chipScroll: {
-    paddingBottom: spacing.md,
-    gap: spacing.sm,
-  },
-  filterChip: {
-    paddingVertical: spacing.sm,
-    paddingHorizontal: spacing.lg,
-    borderRadius: borderRadius.full,
-    borderWidth: 1,
-  },
-  filterChipText: {
-    fontSize: fontSize.sm,
-    fontWeight: '600',
   },
   sortRow: {
     flexDirection: 'row',

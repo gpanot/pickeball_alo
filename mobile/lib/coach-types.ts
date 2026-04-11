@@ -31,6 +31,9 @@ export interface CoachResult {
   bankAccountName: string | null;
   bankAccountNumber: string | null;
   bankBin: string | null;
+  phoneVerified?: boolean;
+  isPhoneVerified?: boolean;
+  gender?: string | null;
   courts?: CoachCourtLinkResult[];
   creditPacks?: CreditPackResult[];
 }
@@ -42,6 +45,10 @@ export interface CoachCourtLinkResult {
   venueAddress: string;
   courtIds: string[];
   isActive: boolean;
+  venueLat?: number | null;
+  venueLng?: number | null;
+  venuePriceMin?: number | null;
+  venueCourtCount?: number;
 }
 
 export interface CoachAvailabilityResult {

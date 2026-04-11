@@ -75,6 +75,8 @@ export async function POST(req: NextRequest) {
         ratingOverall: coach.ratingOverall,
         reviewCount: coach.reviewCount,
         isActive: coach.isActive,
+        phoneVerified: coach.phoneVerified,
+        gender: coach.gender,
       },
     });
   } catch (err) {

@@ -6,7 +6,7 @@ import { signCoachToken } from '@/lib/coach-session';
 export async function POST(req: NextRequest) {
   try {
     const body = await req.json();
-    const { name, phone, password, email, hourlyRate1on1 } = body;
+    const { name, phone, password, email, hourlyRate1on1, gender } = body;
     const normalizedPhone = String(phone ?? '').trim();
     const normalizedName = String(name ?? '').trim();
     const normalizedEmail = typeof email === 'string' ? email.trim().toLowerCase() : '';
@@ -44,6 +44,10 @@ export async function POST(req: NextRequest) {
       typeof body.experienceBand === 'string' && body.experienceBand.trim().length > 0
         ? body.experienceBand.trim()
         : null;
+    const normalizedGender =
+      typeof gender === 'string' && ['male', 'female'].includes(gender.toLowerCase().trim())
+        ? gender.toLowerCase().trim()
+        : null;
 
     const existing = await prisma.coach.findUnique({ where: { phone: normalizedPhone } });
     if (existing) {
@@ -74,6 +78,7 @@ export async function POST(req: NextRequest) {
         focusLevels,
         groupSizes,
         experienceBand,
+        gender: normalizedGender,
       },
     });
 
@@ -103,6 +108,8 @@ export async function POST(req: NextRequest) {
         email: coach.email,
         subscriptionPlan: coach.subscriptionPlan,
         hourlyRate1on1: coach.hourlyRate1on1,
+        phoneVerified: coach.phoneVerified,
+        gender: coach.gender,
       },
     }, { status: 201 });
   } catch (err) {

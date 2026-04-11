@@ -8,6 +8,8 @@ export async function POST(req: NextRequest) {
     const name = String(body?.name ?? '').trim();
     const phone = String(body?.phone ?? '').trim();
     const password = String(body?.password ?? '');
+    const genderRaw = typeof body?.gender === 'string' ? body.gender.toLowerCase().trim() : null;
+    const gender = genderRaw && ['male', 'female'].includes(genderRaw) ? genderRaw : null;
 
     if (!name || !phone || !password) {
       return NextResponse.json({ error: 'name, phone, and password are required' }, { status: 400 });
@@ -29,6 +31,7 @@ export async function POST(req: NextRequest) {
           data: {
             name,
             passwordHash,
+            ...(gender ? { gender } : {}),
           },
         })
       : await prisma.userProfile.create({
@@ -36,6 +39,7 @@ export async function POST(req: NextRequest) {
             name,
             phone,
             passwordHash,
+            gender,
             savedVenues: [],
           },
         });
@@ -46,6 +50,8 @@ export async function POST(req: NextRequest) {
           id: profile.id,
           name: profile.name,
           phone: profile.phone,
+          phoneVerified: profile.phoneVerified,
+          gender: profile.gender,
           savedVenues: profile.savedVenues,
         },
       },

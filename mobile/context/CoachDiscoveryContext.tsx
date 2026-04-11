@@ -66,6 +66,8 @@ export function CoachDiscoveryProvider({ children }: { children: ReactNode }) {
   }, [coaches.length, total, loading, searchParams]);
 
   const selectCoach = useCallback(async (id: string) => {
+    setSelectedCoach(null);
+    setSelectedCoachAvailability([]);
     setLoading(true);
     setError(null);
     try {

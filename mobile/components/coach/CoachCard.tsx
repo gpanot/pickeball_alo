@@ -10,6 +10,7 @@ export interface CoachCardProps {
   ratingOverall: number | null;
   reviewCount: number;
   hourlyRate: number;
+  distanceKm?: number | null;
   onPress: () => void;
   theme: ThemeTokens;
 }
@@ -28,6 +29,7 @@ export function CoachCard({
   ratingOverall,
   reviewCount,
   hourlyRate,
+  distanceKm,
   onPress,
   theme,
 }: CoachCardProps) {
@@ -89,9 +91,16 @@ export function CoachCard({
             <Text style={{ color: theme.textMuted }}>{reviewsLabel}</Text>
           </Text>
         </View>
-        <Text style={[styles.rate, { color: theme.accent }]}>
-          {formatVndFull(hourlyRate)}/hr
-        </Text>
+        <View style={styles.bottomRow}>
+          <Text style={[styles.rate, { color: theme.accent }]}>
+            {formatVndFull(hourlyRate)}/hr
+          </Text>
+          {distanceKm != null && (
+            <Text style={styles.distance}>
+              {distanceKm < 1 ? `${Math.round(distanceKm * 1000)}m` : `${distanceKm.toFixed(1)}km`}
+            </Text>
+          )}
+        </View>
       </View>
     </Pressable>
   );
@@ -155,8 +164,18 @@ const styles = StyleSheet.create({
   meta: {
     fontSize: fontSize.sm,
   },
+  bottomRow: {
+    flexDirection: 'row',
+    alignItems: 'center',
+    justifyContent: 'space-between',
+  },
   rate: {
     fontSize: fontSize.md,
     fontWeight: '700',
+  },
+  distance: {
+    fontSize: fontSize.xs,
+    fontWeight: '500',
+    color: '#999',
   },
 });

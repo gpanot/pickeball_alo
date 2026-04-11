@@ -14,7 +14,7 @@ import { useSafeAreaInsets } from 'react-native-safe-area-context';
 import { PhoneIcon, PinIcon } from '@/components/Icons';
 import type { ThemeTokens } from '@/lib/theme';
 import type { BookingResult, BookingSlot, VenueResult } from '@/lib/types';
-import { formatVndFull } from '@/lib/formatters';
+import { formatVndFull, formatDateFriendly } from '@/lib/formatters';
 import { getVenue } from '@/lib/api';
 import VietQrPaymentPanel from '@/components/booking/VietQrPaymentPanel';
 
@@ -160,7 +160,7 @@ export default function BookingDetailScreen({
         <Text style={{ fontWeight: '700', fontSize: 18, color: t.text, marginBottom: 12 }}>
           {live.venueName}
         </Text>
-        <Text style={{ fontSize: 14, color: t.textSec, marginBottom: 8 }}>Date: {live.date}</Text>
+        <Text style={{ fontSize: 14, color: t.textSec, marginBottom: 8 }}>Date: {formatDateFriendly(live.date)}</Text>
         {slots.map((s, i) => (
           <View
             key={i}

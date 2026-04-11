@@ -27,6 +27,8 @@ export async function POST(req: NextRequest) {
         id: profile.id,
         name: profile.name,
         phone: profile.phone,
+        phoneVerified: profile.phoneVerified,
+        gender: profile.gender,
         savedVenues: profile.savedVenues,
       },
     });

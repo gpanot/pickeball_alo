@@ -91,7 +91,8 @@ export default function CoachTodayScreen() {
   }, [coach, navigation]);
 
   const hasBank = Boolean(coach?.bankAccountNumber);
-  const setupComplete = hasCourts === true && hasBank;
+  const hasPhoneVerified = Boolean(coach?.phoneVerified ?? coach?.isPhoneVerified);
+  const setupComplete = hasCourts === true && hasBank && hasPhoneVerified;
 
   const todaySessions = useMemo(
     () =>
@@ -294,6 +295,11 @@ export default function CoachTodayScreen() {
                 <SetupItem
                   done={hasBank}
                   label="Add bank details"
+                  onPress={() => router.push('/(coach-tabs)/profile-settings' as Href)}
+                />
+                <SetupItem
+                  done={hasPhoneVerified}
+                  label="Verify phone number"
                   onPress={() => router.push('/(coach-tabs)/profile-settings' as Href)}
                 />
               </View>

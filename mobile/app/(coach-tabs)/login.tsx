@@ -69,6 +69,7 @@ export default function CoachLoginScreen() {
   const [regFocusLevels, setRegFocusLevels] = useState<string[]>([]);
   const [regGroupSizes, setRegGroupSizes] = useState<string[]>([]);
   const [regExperienceBand, setRegExperienceBand] = useState<string | null>(null);
+  const [regGender, setRegGender] = useState<'male' | 'female' | null>(null);
   const [validationError, setValidationError] = useState<string | null>(null);
 
   const onLogin = useCallback(async () => {
@@ -104,6 +105,10 @@ export default function CoachLoginScreen() {
       setValidationError('Enter a valid hourly rate.');
       return;
     }
+    if (!regGender) {
+      setValidationError('Please select your gender.');
+      return;
+    }
     try {
       await register({
         name: regName.trim(),
@@ -115,6 +120,7 @@ export default function CoachLoginScreen() {
         focusLevels: regFocusLevels.length ? regFocusLevels : undefined,
         groupSizes: regGroupSizes.length ? regGroupSizes : undefined,
         experienceBand: regExperienceBand ?? undefined,
+        gender: regGender,
       });
       router.replace('/(coach-tabs)/today');
     } catch {
@@ -124,6 +130,7 @@ export default function CoachLoginScreen() {
     register,
     regExperienceBand,
     regFocusLevels,
+    regGender,
     regGroupSizes,
     regLanguages,
     regName,
@@ -250,6 +257,30 @@ export default function CoachLoginScreen() {
               secureTextEntry
               style={[styles.input, { backgroundColor: t.bgInput, borderColor: t.border, color: t.text }]}
             />
+            <Text style={[styles.label, { color: t.textSec }]}>Gender</Text>
+            <View style={styles.genderRow}>
+              {(['male', 'female'] as const).map((g) => {
+                const active = regGender === g;
+                return (
+                  <Pressable
+                    key={g}
+                    onPress={() => setRegGender(g)}
+                    style={({ pressed }) => [
+                      styles.genderBtn,
+                      {
+                        backgroundColor: active ? t.accentBgStrong : t.bgInput,
+                        borderColor: active ? t.accent : t.border,
+                        opacity: pressed ? 0.85 : 1,
+                      },
+                    ]}
+                  >
+                    <Text style={[styles.genderBtnText, { color: active ? t.accent : t.textSec }]}>
+                      {g === 'male' ? 'Male' : 'Female'}
+                    </Text>
+                  </Pressable>
+                );
+              })}
+            </View>
             <Text style={[styles.label, { color: t.textSec }]}>Hourly rate (1:1)</Text>
             <TextInput
               value={regRate}
@@ -423,6 +454,22 @@ const styles = StyleSheet.create({
     paddingHorizontal: spacing.md,
     paddingVertical: spacing.md,
     fontSize: fontSize.md,
+  },
+  genderRow: {
+    flexDirection: 'row',
+    gap: spacing.sm,
+    marginBottom: spacing.xs,
+  },
+  genderBtn: {
+    flex: 1,
+    borderWidth: 1,
+    borderRadius: borderRadius.md,
+    paddingVertical: spacing.md,
+    alignItems: 'center',
+  },
+  genderBtnText: {
+    fontSize: fontSize.md,
+    fontWeight: '700',
   },
   chipWrap: {
     flexDirection: 'row',

@@ -1,12 +1,12 @@
-import React, { useCallback, useEffect, useMemo, useState } from 'react';
+import React, { useCallback, useEffect, useMemo, useRef, useState } from 'react';
 import {
   View,
   Text,
   Image,
   Pressable,
   ScrollView,
-  ActivityIndicator,
   StyleSheet,
+  Animated,
 } from 'react-native';
 import { SafeAreaView } from 'react-native-safe-area-context';
 import { useRouter, useLocalSearchParams } from 'expo-router';
@@ -14,11 +14,83 @@ import { useCourtMap } from '@/context/CourtMapContext';
 import { useCoachDiscovery } from '@/context/CoachDiscoveryContext';
 import { useCredits } from '@/context/CreditContext';
 import { getCoachReviews } from '@/mobile/lib/coach-api';
-import { formatVndFull } from '@/lib/formatters';
+import { formatVndFull, formatPrice } from '@/lib/formatters';
 import { RatingBar, SectionHeader } from '@/components/coach';
 import { spacing, fontSize, borderRadius } from '@/mobile/lib/theme';
 import type { CoachReviewResult } from '@/mobile/lib/coach-types';
 import type { Href } from 'expo-router';
+
+function haversineKm(lat1: number, lng1: number, lat2: number, lng2: number): number {
+  const toRad = (d: number) => (d * Math.PI) / 180;
+  const R = 6371;
+  const dLat = toRad(lat2 - lat1);
+  const dLng = toRad(lng2 - lng1);
+  const a = Math.sin(dLat / 2) ** 2 + Math.cos(toRad(lat1)) * Math.cos(toRad(lat2)) * Math.sin(dLng / 2) ** 2;
+  return R * 2 * Math.atan2(Math.sqrt(a), Math.sqrt(1 - a));
+}
+
+function SkeletonBlock({ width, height, style, theme }: {
+  width: number | string;
+  height: number;
+  style?: object;
+  theme: { bgCard: string; border: string };
+}) {
+  const opacity = useRef(new Animated.Value(0.4)).current;
+  useEffect(() => {
+    const anim = Animated.loop(
+      Animated.sequence([
+        Animated.timing(opacity, { toValue: 1, duration: 800, useNativeDriver: true }),
+        Animated.timing(opacity, { toValue: 0.4, duration: 800, useNativeDriver: true }),
+      ]),
+    );
+    anim.start();
+    return () => anim.stop();
+  }, [opacity]);
+
+  return (
+    <Animated.View
+      style={[
+        { width: width as any, height, borderRadius: height / 2, backgroundColor: theme.border, opacity },
+        style,
+      ]}
+    />
+  );
+}
+
+function CoachProfileSkeleton({ theme }: { theme: any }) {
+  return (
+    <ScrollView showsVerticalScrollIndicator={false} contentContainerStyle={styles.scrollContent}>
+      <View style={styles.backBtn}>
+        <SkeletonBlock width={60} height={18} theme={theme} />
+      </View>
+      <View style={styles.heroSection}>
+        <SkeletonBlock width={96} height={96} style={{ borderRadius: 48, marginBottom: spacing.md }} theme={theme} />
+        <SkeletonBlock width={160} height={22} style={{ marginBottom: spacing.sm }} theme={theme} />
+        <SkeletonBlock width={120} height={14} style={{ marginBottom: spacing.sm }} theme={theme} />
+        <SkeletonBlock width={100} height={14} style={{ marginBottom: spacing.xs }} theme={theme} />
+        <SkeletonBlock width={180} height={14} theme={theme} />
+      </View>
+      <View style={[styles.section, { borderTopColor: theme.border }]}>
+        <SkeletonBlock width={80} height={16} style={{ marginBottom: spacing.md }} theme={theme} />
+        <SkeletonBlock width={'100%'} height={12} style={{ marginBottom: spacing.sm }} theme={theme} />
+        <SkeletonBlock width={'85%'} height={12} style={{ marginBottom: spacing.sm }} theme={theme} />
+        <SkeletonBlock width={'60%'} height={12} theme={theme} />
+      </View>
+      <View style={[styles.section, { borderTopColor: theme.border }]}>
+        <SkeletonBlock width={100} height={16} style={{ marginBottom: spacing.md }} theme={theme} />
+        <View style={{ flexDirection: 'row', gap: spacing.sm }}>
+          <SkeletonBlock width={80} height={32} theme={theme} />
+          <SkeletonBlock width={90} height={32} theme={theme} />
+          <SkeletonBlock width={70} height={32} theme={theme} />
+        </View>
+      </View>
+      <View style={[styles.section, { borderTopColor: theme.border }]}>
+        <SkeletonBlock width={70} height={16} style={{ marginBottom: spacing.md }} theme={theme} />
+        <SkeletonBlock width={'100%'} height={60} style={{ borderRadius: borderRadius.md }} theme={theme} />
+      </View>
+    </ScrollView>
+  );
+}
 
 function initialsFromName(name: string): string {
   const parts = name.trim().split(/\s+/).filter(Boolean);
@@ -74,7 +146,7 @@ function nextAvailabilityLabel(
 export default function CoachProfileScreen() {
   const router = useRouter();
   const { coachId } = useLocalSearchParams<{ coachId: string }>();
-  const { t } = useCourtMap();
+  const { t, mapUserLoc } = useCourtMap();
   const { selectedCoach, loading, selectCoach, loadAvailability, selectedCoachAvailability } =
     useCoachDiscovery();
   const { getAvailableCredits } = useCredits();
@@ -85,6 +157,9 @@ export default function CoachProfileScreen() {
 
   useEffect(() => {
     if (coachId) {
+      setReviews([]);
+      setReviewTotal(0);
+      setImgFailed(false);
       selectCoach(coachId);
       loadAvailability(coachId);
       getCoachReviews(coachId, 5, 0)
@@ -121,9 +196,7 @@ export default function CoachProfileScreen() {
   if (loading && !coach) {
     return (
       <SafeAreaView style={[styles.root, { backgroundColor: t.bg }]} edges={['top']}>
-        <View style={styles.loadingWrap}>
-          <ActivityIndicator color={t.accent} size="large" />
-        </View>
+        <CoachProfileSkeleton theme={t} />
       </SafeAreaView>
     );
   }
@@ -139,6 +212,17 @@ export default function CoachProfileScreen() {
         </View>
       </SafeAreaView>
     );
+  }
+
+  if (__DEV__) {
+    console.log('[coach-profile] courts:', JSON.stringify(coach.courts?.map(c => ({
+      venueName: c.venueName,
+      venueLat: c.venueLat,
+      venueLng: c.venueLng,
+      venuePriceMin: c.venuePriceMin,
+      venueCourtCount: c.venueCourtCount,
+    }))));
+    console.log('[coach-profile] mapUserLoc:', mapUserLoc);
   }
 
   const showPhoto = Boolean(coach.photo?.trim()) && !imgFailed;
@@ -275,12 +359,23 @@ export default function CoachProfileScreen() {
         {(coach.courts?.length ?? 0) > 0 && (
           <View style={[styles.section, { borderTopColor: t.border }]}>
             <SectionHeader title="Courts" theme={t} />
-            {coach.courts!.map((cl) => (
-              <View key={cl.id} style={styles.courtRow}>
-                <Text style={[styles.courtPin, { color: t.accent }]}>📍</Text>
-                <Text style={[styles.courtName, { color: t.text }]}>{cl.venueName}</Text>
-              </View>
-            ))}
+            {coach.courts!.map((cl) => {
+              const dist = mapUserLoc && cl.venueLat && cl.venueLng
+                ? haversineKm(mapUserLoc.lat, mapUserLoc.lng, cl.venueLat, cl.venueLng)
+                : null;
+              const pricePart = cl.venuePriceMin ? formatPrice(cl.venuePriceMin) : null;
+              const distPart = dist != null ? `${dist.toFixed(1)}km` : null;
+              const badge = [pricePart, distPart].filter(Boolean).join(' / ');
+              return (
+                <View key={cl.id} style={styles.courtRow}>
+                  <Text style={[styles.courtPin, { color: t.accent }]}>📍</Text>
+                  <Text style={[styles.courtName, { color: t.text }]} numberOfLines={1}>{cl.venueName}</Text>
+                  {badge ? (
+                    <Text style={[styles.courtBadge, { color: t.textSec }]}>{badge}</Text>
+                  ) : null}
+                </View>
+              );
+            })}
           </View>
         )}
 
@@ -524,6 +619,10 @@ const styles = StyleSheet.create({
   courtName: {
     fontSize: fontSize.md,
     flex: 1,
+  },
+  courtBadge: {
+    fontSize: fontSize.sm,
+    fontWeight: '600',
   },
   priceCard: {
     borderRadius: borderRadius.md,

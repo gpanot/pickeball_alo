@@ -1,0 +1,20 @@
+---
+description: Project infrastructure and deployment details
+alwaysApply: true
+---
+
+# Infrastructure
+
+- **Database**: Railway PostgreSQL
+  - Project ID: `48c05b01-426d-4e22-8a3d-c921bb788ef5`
+  - Connection: `maglev.proxy.rlwy.net:31886/railway`
+  - Use `DATABASE_URL` from `.env.vercel.production` for production operations
+  - Run `npx prisma migrate deploy` with the production `DATABASE_URL` to apply migrations
+
+- **Hosting**: Vercel
+  - Project ID: `prj_cfk8cYq0ewmbKfwKtN6fogKOjQsJ`
+  - Use the `project-0-alobo-vercel` or `user-vercel` MCP servers for Vercel operations
+
+- **ORM**: Prisma (schema at `prisma/schema.prisma`)
+  - After schema changes: create migration SQL in `prisma/migrations/`, then deploy to production
+  - Always run `npx prisma generate` after schema changes

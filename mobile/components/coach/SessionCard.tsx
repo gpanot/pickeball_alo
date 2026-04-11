@@ -1,6 +1,7 @@
 import React from 'react';
 import { View, Text, Pressable, StyleSheet } from 'react-native';
 import { spacing, fontSize, borderRadius, type ThemeTokens } from '@/mobile/lib/theme';
+import { formatDateFriendly } from '@/lib/formatters';
 
 export interface SessionCardProps {
   coachName: string;
@@ -51,7 +52,7 @@ export function SessionCard({
       <View style={styles.topRow}>
         <View style={styles.leftCol}>
           <Text style={[styles.dateLine, { color: theme.text }]} numberOfLines={1}>
-            {date}
+            {formatDateFriendly(date)}
           </Text>
           <Text style={[styles.timeLine, { color: theme.textSec }]} numberOfLines={1}>
             {startTime} – {endTime}

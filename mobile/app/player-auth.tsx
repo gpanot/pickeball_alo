@@ -34,6 +34,7 @@ export default function PlayerAuthScreen() {
   const [regName, setRegName] = useState('');
   const [regPhone, setRegPhone] = useState('');
   const [regPassword, setRegPassword] = useState('');
+  const [regGender, setRegGender] = useState<'male' | 'female' | null>(null);
   const [loading, setLoading] = useState(false);
   const [error, setError] = useState<string | null>(null);
   const [showWelcome, setShowWelcome] = useState(true);
@@ -55,7 +56,13 @@ export default function PlayerAuthScreen() {
     setLoading(true);
     try {
       const profile = await playerLogin(phone, password);
-      handleSaveProfile(profile.name, profile.phone, profile.id);
+      handleSaveProfile(
+        profile.name,
+        profile.phone,
+        profile.id,
+        Boolean(profile.phoneVerified),
+        profile.gender ?? null,
+      );
       router.replace('/(tabs)/(book)');
     } catch (err) {
       setError(err instanceof Error ? err.message : 'Login failed');
@@ -77,17 +84,27 @@ export default function PlayerAuthScreen() {
       setError('Password must be at least 6 characters.');
       return;
     }
+    if (!regGender) {
+      setError('Please select your gender.');
+      return;
+    }
     setLoading(true);
     try {
-      const profile = await playerRegister({ name, phone, password });
-      handleSaveProfile(profile.name, profile.phone, profile.id);
+      const profile = await playerRegister({ name, phone, password, gender: regGender });
+      handleSaveProfile(
+        profile.name,
+        profile.phone,
+        profile.id,
+        Boolean(profile.phoneVerified),
+        profile.gender ?? regGender,
+      );
       router.replace('/(tabs)/(book)');
     } catch (err) {
       setError(err instanceof Error ? err.message : 'Registration failed');
     } finally {
       setLoading(false);
     }
-  }, [handleSaveProfile, regName, regPassword, regPhone, router]);
+  }, [handleSaveProfile, regGender, regName, regPassword, regPhone, router]);
 
   return (
     <SafeAreaView style={[styles.root, { backgroundColor: t.bg }]} edges={['top', 'bottom']}>
@@ -192,6 +209,30 @@ export default function PlayerAuthScreen() {
               secureTextEntry
               style={[styles.input, { backgroundColor: t.bgInput, borderColor: t.border, color: t.text }]}
             />
+            <Text style={[styles.label, { color: t.textSec }]}>Gender</Text>
+            <View style={styles.genderRow}>
+              {(['male', 'female'] as const).map((g) => {
+                const active = regGender === g;
+                return (
+                  <Pressable
+                    key={g}
+                    onPress={() => setRegGender(g)}
+                    style={({ pressed }) => [
+                      styles.genderBtn,
+                      {
+                        backgroundColor: active ? t.accentBgStrong : t.bgInput,
+                        borderColor: active ? t.accent : t.border,
+                        opacity: pressed ? 0.85 : 1,
+                      },
+                    ]}
+                  >
+                    <Text style={[styles.genderBtnText, { color: active ? t.accent : t.textSec }]}>
+                      {g === 'male' ? 'Male' : 'Female'}
+                    </Text>
+                  </Pressable>
+                );
+              })}
+            </View>
           </View>
         )}
 
@@ -261,6 +302,22 @@ const styles = StyleSheet.create({
   },
   form: {
     gap: spacing.sm,
+  },
+  genderRow: {
+    flexDirection: 'row',
+    gap: spacing.sm,
+    marginBottom: spacing.xs,
+  },
+  genderBtn: {
+    flex: 1,
+    borderWidth: 1,
+    borderRadius: borderRadius.md,
+    paddingVertical: spacing.md,
+    alignItems: 'center',
+  },
+  genderBtnText: {
+    fontSize: fontSize.md,
+    fontWeight: '700',
   },
   label: {
     fontSize: fontSize.sm,

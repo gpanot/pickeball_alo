@@ -23,7 +23,16 @@ export function formatPriceRange(min: number | null, max: number | null): string
 }
 
 const DAYS = ['Sun', 'Mon', 'Tue', 'Wed', 'Thu', 'Fri', 'Sat'];
+const DAYS_FULL = ['Sunday', 'Monday', 'Tuesday', 'Wednesday', 'Thursday', 'Friday', 'Saturday'];
 const MONTHS = ['Jan', 'Feb', 'Mar', 'Apr', 'May', 'Jun', 'Jul', 'Aug', 'Sep', 'Oct', 'Nov', 'Dec'];
+const MONTHS_FULL = ['January', 'February', 'March', 'April', 'May', 'June', 'July', 'August', 'September', 'October', 'November', 'December'];
+
+/** "Tuesday, April 5" from a YYYY-MM-DD string. */
+export function formatDateFriendly(ymd: string): string {
+  const [y, m, d] = ymd.split('-').map(Number);
+  const date = new Date(y, m - 1, d);
+  return `${DAYS_FULL[date.getDay()]}, ${MONTHS_FULL[date.getMonth()]} ${date.getDate()}`;
+}
 
 export function formatDateShort(d: Date): string {
   return `${DAYS[d.getDay()]} ${MONTHS[d.getMonth()]} ${d.getDate()}`;

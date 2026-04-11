@@ -2,7 +2,7 @@ import React, { memo } from 'react';
 import { View, Text, Pressable, StyleSheet, Alert } from 'react-native';
 import type { ThemeTokens } from '@/lib/theme';
 import type { BookingResult, BookingSlot } from '@/lib/types';
-import { formatVndFull } from '@/lib/formatters';
+import { formatVndFull, formatDateFriendly } from '@/lib/formatters';
 
 interface BookingCardProps {
   booking: BookingResult;
@@ -61,7 +61,7 @@ function BookingCard({ booking, onCancel, onEdit, onPress, t }: BookingCardProps
         </View>
       </View>
       <Text style={{ fontSize: 13, color: t.textSec, marginBottom: 4 }}>
-        {booking.date} · {slots.map((s) => s.time).join(', ')}
+        {formatDateFriendly(booking.date)} · {slots.map((s) => s.time).join(', ')}
       </Text>
       <Text style={{ fontSize: 13, color: t.textSec, marginBottom: 4 }}>
         {slots.map((s) => s.courtName).filter((v, i, a) => a.indexOf(v) === i).join(', ')}
