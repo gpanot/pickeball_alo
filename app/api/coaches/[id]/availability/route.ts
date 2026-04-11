@@ -25,9 +25,21 @@ export async function GET(
   }
 
   const dateParam = req.nextUrl.searchParams.get('date');
-  const where = dateParam
-    ? { coachId: id, date: dateParam }
-    : { coachId: id };
+
+  let where: object;
+  if (dateParam) {
+    const dateObj = new Date(dateParam + 'T00:00:00');
+    const dow = dateObj.getDay();
+    where = {
+      coachId: id,
+      OR: [
+        { date: dateParam },
+        { date: null, dayOfWeek: dow },
+      ],
+    };
+  } else {
+    where = { coachId: id };
+  }
 
   const rows = await prisma.coachAvailability.findMany({
     where,
