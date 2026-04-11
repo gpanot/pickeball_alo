@@ -1,6 +1,6 @@
-import React, { useMemo } from 'react';
+import React, { useCallback, useMemo } from 'react';
 import { View, Pressable, StyleSheet } from 'react-native';
-import { useLocalSearchParams, useRouter } from 'expo-router';
+import { useFocusEffect, useLocalSearchParams, useRouter } from 'expo-router';
 import { BackIcon } from '@/components/Icons';
 import ScreenTopBar from '@/components/ui/ScreenTopBar';
 import BookingDetailScreen from '@/components/booking/BookingDetailScreen';
@@ -11,6 +11,12 @@ export default function BookingDetailRoute() {
   const router = useRouter();
   const ctx = useCourtMap();
   const { t, bookings, userId, loadBookings, handleCancelBooking, beginEditBooking } = ctx;
+
+  useFocusEffect(
+    useCallback(() => {
+      void loadBookings();
+    }, [loadBookings]),
+  );
 
   const booking = useMemo(() => bookings.find((b) => b.id === id), [bookings, id]);
 

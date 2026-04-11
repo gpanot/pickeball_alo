@@ -12,16 +12,17 @@ import {
 } from 'react-native';
 import { useSafeAreaInsets } from 'react-native-safe-area-context';
 import { PhoneIcon, PinIcon } from '@/components/Icons';
+import ContactCourtCTA from '@/components/booking/ContactCourtCTA';
 import type { ThemeTokens } from '@/lib/theme';
 import type { BookingResult, BookingSlot, VenueResult } from '@/lib/types';
-import { formatVndFull, formatDateFriendly } from '@/lib/formatters';
+import { formatVndFull, formatDateFriendly, formatBookingOrderRef } from '@/lib/formatters';
 import { getVenue } from '@/lib/api';
 import VietQrPaymentPanel from '@/components/booking/VietQrPaymentPanel';
 
 interface BookingDetailScreenProps {
   booking: BookingResult;
   userId: string;
-  onCancel: (id: string) => void;
+  onCancel: (id: string) => Promise<'ok' | 'contact_court' | 'error' | undefined> | void;
   onEditRequest?: (booking: BookingResult) => void;
   onBookingRefresh?: () => void;
   t: ThemeTokens;
@@ -50,9 +51,21 @@ export default function BookingDetailScreen({
 
   const slots = live.slots as BookingSlot[];
   const isCanceled = live.status === 'canceled';
-  const canCancel = live.status === 'pending' || live.status === 'payment_submitted';
-  const canEdit = live.status === 'pending' && onEditRequest != null;
+  const isPending = live.status === 'pending';
+  const isLocked = live.status === 'payment_submitted' || live.status === 'paid';
+  const canCancel = isPending;
+  const canEdit = !isCanceled && onEditRequest != null;
   const currentStep = isCanceled ? -1 : STEP_ORDER.indexOf(live.status as (typeof STEP_ORDER)[number]);
+
+  const [venueZaloId, setVenueZaloId] = useState<string | null>(null);
+
+  React.useEffect(() => {
+    if (isLocked && live.venueId) {
+      getVenue(live.venueId, live.date)
+        .then((v) => setVenueZaloId(v.zaloId ?? null))
+        .catch(() => {});
+    }
+  }, [isLocked, live.venueId, live.date]);
 
   const [payOpen, setPayOpen] = useState(false);
   const [payVenue, setPayVenue] = useState<VenueResult | null>(null);
@@ -73,18 +86,20 @@ export default function BookingDetailScreen({
   }, [live.venueId, live.date]);
 
   const confirmCancel = () => {
-    const msg =
-      live.status === 'payment_submitted'
-        ? 'If you already transferred money, contact the venue for a refund. Continue?'
-        : 'This cannot be undone.';
-    Alert.alert('Cancel booking?', msg, [
+    Alert.alert('Cancel booking?', 'This cannot be undone.', [
       { text: 'No', style: 'cancel' },
-      { text: 'Yes', style: 'destructive', onPress: () => onCancel(live.id) },
+      { text: 'Yes', style: 'destructive', onPress: () => void onCancel(live.id) },
     ]);
   };
 
+  const orderRef = formatBookingOrderRef(live.orderId);
+
   return (
-    <View style={[styles.root, { backgroundColor: t.bg, paddingBottom: insets.bottom + 24 }]}>
+    <View style={{ flex: 1, backgroundColor: t.bg }}>
+    <ScrollView
+      style={styles.root}
+      contentContainerStyle={{ paddingBottom: insets.bottom + 24 }}
+    >
       <View style={[styles.timeline, { marginBottom: 24 }]}>
         {STEP_ORDER.map((step, i) => {
           const isActive = i <= currentStep;
@@ -185,7 +200,7 @@ export default function BookingDetailScreen({
         ) : null}
       </View>
 
-      {live.status === 'pending' ? (
+      {isPending ? (
         <Pressable
           onPress={() => void openPay()}
           style={[styles.payCta, { backgroundColor: t.accent, marginTop: 16 }]}
@@ -213,12 +228,22 @@ export default function BookingDetailScreen({
         ) : null}
       </View>
 
+      {isLocked ? (
+        <View style={[styles.lockedBanner, { backgroundColor: t.bgInput, borderColor: t.border, marginTop: 16 }]}>
+          <Text style={{ fontSize: 13, color: t.textSec, lineHeight: 18 }}>
+            Booking is locked after payment. Slot changes may require additional payment. Contact the court to cancel.
+          </Text>
+        </View>
+      ) : null}
+
       {canEdit ? (
         <Pressable
           onPress={() => onEditRequest!(live)}
           style={[styles.editFull, { backgroundColor: t.accentBg, borderColor: t.accent, marginTop: 16 }]}
         >
-          <Text style={{ color: t.accent, fontWeight: '800', fontSize: 14 }}>Edit request</Text>
+          <Text style={{ color: t.accent, fontWeight: '800', fontSize: 14 }}>
+            {isLocked ? 'Change slots' : 'Edit request'}
+          </Text>
         </Pressable>
       ) : null}
 
@@ -227,42 +252,54 @@ export default function BookingDetailScreen({
           onPress={confirmCancel}
           style={[styles.cancelFull, { borderColor: t.red, marginTop: canEdit ? 10 : 16 }]}
         >
-          <Text style={{ color: t.red, fontWeight: '700', fontSize: 14 }}>
-            {live.status === 'pending' ? 'Cancel request' : 'Cancel booking'}
-          </Text>
+          <Text style={{ color: t.red, fontWeight: '700', fontSize: 14 }}>Cancel request</Text>
         </Pressable>
       ) : null}
 
-      <Modal visible={payOpen} animationType="slide" onRequestClose={() => setPayOpen(false)}>
-        <View style={[styles.modalRoot, { backgroundColor: t.bg, paddingTop: insets.top + 8 }]}>
-          <View style={[styles.modalBar, { borderBottomColor: t.border }]}>
-            <Pressable onPress={() => setPayOpen(false)} style={{ padding: 12 }}>
-              <Text style={{ color: t.accent, fontWeight: '700' }}>Close</Text>
-            </Pressable>
-            <Text style={{ flex: 1, textAlign: 'center', color: t.text, fontWeight: '800' }}>Pay</Text>
-            <View style={{ width: 56 }} />
-          </View>
-          {payLoading ? (
-            <ActivityIndicator size="large" color={t.accent} style={{ marginTop: 40 }} />
-          ) : payVenue ? (
-            <View style={{ flex: 1, paddingHorizontal: 16, paddingTop: 16, paddingBottom: insets.bottom + 12 }}>
-              <VietQrPaymentPanel
-                booking={live}
-                venue={payVenue}
-                userId={userId}
-                t={t}
-                showSuccessHeader={false}
-                onBookingUpdated={(b) => {
-                  setLive(b);
-                  onBookingRefresh?.();
-                }}
-              />
-            </View>
-          ) : (
-            <Text style={{ color: t.textSec, textAlign: 'center', marginTop: 32 }}>Could not load venue.</Text>
-          )}
+      {isLocked ? (
+        <View style={{ marginTop: 12 }}>
+          <ContactCourtCTA
+            bookingRef={orderRef}
+            courtName={live.venueName}
+            courtPhone={live.venuePhone}
+            courtZalo={venueZaloId}
+            t={t}
+          />
         </View>
-      </Modal>
+      ) : null}
+
+    </ScrollView>
+
+    <Modal visible={payOpen} animationType="slide" onRequestClose={() => setPayOpen(false)}>
+      <View style={[styles.modalRoot, { backgroundColor: t.bg, paddingTop: insets.top + 8 }]}>
+        <View style={[styles.modalBar, { borderBottomColor: t.border }]}>
+          <Pressable onPress={() => setPayOpen(false)} style={{ padding: 12 }}>
+            <Text style={{ color: t.accent, fontWeight: '700' }}>Close</Text>
+          </Pressable>
+          <Text style={{ flex: 1, textAlign: 'center', color: t.text, fontWeight: '800' }}>Pay</Text>
+          <View style={{ width: 56 }} />
+        </View>
+        {payLoading ? (
+          <ActivityIndicator size="large" color={t.accent} style={{ marginTop: 40 }} />
+        ) : payVenue ? (
+          <View style={{ flex: 1, paddingHorizontal: 16, paddingTop: 16, paddingBottom: insets.bottom + 12 }}>
+            <VietQrPaymentPanel
+              booking={live}
+              venue={payVenue}
+              userId={userId}
+              t={t}
+              showSuccessHeader={false}
+              onBookingUpdated={(b) => {
+                setLive(b);
+                onBookingRefresh?.();
+              }}
+            />
+          </View>
+        ) : (
+          <Text style={{ color: t.textSec, textAlign: 'center', marginTop: 32 }}>Could not load venue.</Text>
+        )}
+      </View>
+    </Modal>
     </View>
   );
 }
@@ -313,6 +350,11 @@ const styles = StyleSheet.create({
     paddingVertical: 16,
     borderRadius: 14,
     alignItems: 'center',
+  },
+  lockedBanner: {
+    borderRadius: 12,
+    borderWidth: 1,
+    padding: 12,
   },
   modalRoot: { flex: 1 },
   modalBar: {

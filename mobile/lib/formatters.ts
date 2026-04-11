@@ -31,6 +31,34 @@ export function formatDateShort(d: Date): string {
   return `${DAYS[d.getDay()]} ${MONTHS[d.getMonth()]} ${d.getDate()}`;
 }
 
+function parseFriendlyDateInput(value: string | Date): Date | null {
+  if (value instanceof Date) {
+    return Number.isNaN(value.getTime()) ? null : value;
+  }
+  const raw = value.trim();
+  if (!raw) return null;
+
+  // Keep YYYY-MM-DD stable across timezones by constructing a local Date.
+  const isoDateOnly = raw.match(/^(\d{4})-(\d{2})-(\d{2})$/);
+  if (isoDateOnly) {
+    const year = Number(isoDateOnly[1]);
+    const month = Number(isoDateOnly[2]);
+    const day = Number(isoDateOnly[3]);
+    const parsed = new Date(year, month - 1, day);
+    return Number.isNaN(parsed.getTime()) ? null : parsed;
+  }
+
+  const parsed = new Date(raw);
+  return Number.isNaN(parsed.getTime()) ? null : parsed;
+}
+
+export function formatDateFriendly(value: string | Date | null | undefined): string {
+  if (value == null) return '—';
+  const parsed = parseFriendlyDateInput(value);
+  if (!parsed) return typeof value === 'string' ? value : '—';
+  return formatDateShort(parsed);
+}
+
 export function formatDateLabel(d: Date): { day: string; date: string } {
   return { day: DAYS[d.getDay()], date: `${MONTHS[d.getMonth()]} ${d.getDate()}` };
 }

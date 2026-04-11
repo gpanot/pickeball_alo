@@ -109,6 +109,7 @@ export interface VietQrPaymentPanelProps {
   scrollEnabled?: boolean;
   onBookingUpdated?: (b: BookingResult) => void;
   showSuccessHeader?: boolean;
+  onShowMyBooking?: () => void;
 }
 
 export default function VietQrPaymentPanel({
@@ -120,6 +121,7 @@ export default function VietQrPaymentPanel({
   scrollEnabled = true,
   onBookingUpdated,
   showSuccessHeader = true,
+  onShowMyBooking,
 }: VietQrPaymentPanelProps) {
   const [submitting, setSubmitting] = useState(false);
   const [downloading, setDownloading] = useState(false);
@@ -247,6 +249,18 @@ export default function VietQrPaymentPanel({
         <Text style={[styles.orderBig, compact && styles.orderBigCompact, { color: t.accent, marginTop: compact ? 8 : 16 }]}>
           {orderRef}
         </Text>
+        {onShowMyBooking ? (
+          <Pressable
+            onPress={onShowMyBooking}
+            style={[
+              styles.submittedCta,
+              compact && styles.submittedCtaCompact,
+              { backgroundColor: t.accent, marginTop: compact ? 12 : 18 },
+            ]}
+          >
+            <Text style={[styles.submittedCtaText, compact && styles.submittedCtaTextCompact]}>Show my booking</Text>
+          </Pressable>
+        ) : null}
       </View>
     );
   }
@@ -690,4 +704,24 @@ const styles = StyleSheet.create({
   ctaCompact: { paddingVertical: 14, borderRadius: 12 },
   ctaText: { color: '#000', fontWeight: '800', fontSize: 15, letterSpacing: 0.3 },
   ctaTextCompact: { fontSize: 14 },
+  submittedCta: {
+    width: '100%',
+    maxWidth: 320,
+    paddingVertical: 14,
+    borderRadius: 12,
+    alignItems: 'center',
+  },
+  submittedCtaCompact: {
+    paddingVertical: 12,
+    borderRadius: 10,
+  },
+  submittedCtaText: {
+    color: '#000',
+    fontSize: 14,
+    fontWeight: '800',
+    letterSpacing: 0.2,
+  },
+  submittedCtaTextCompact: {
+    fontSize: 13,
+  },
 });

@@ -177,13 +177,13 @@ export default function CourtMapApp() {
   const goMyBookingsTab = useCallback(() => {
     if (userId) {
       setBookingsLoading(true);
-      getBookings(userId)
+      getBookings(userId, userPhone || undefined)
         .then(setBookings)
         .catch(() => {})
         .finally(() => setBookingsLoading(false));
     }
     setScreen('bookings');
-  }, [userId]);
+  }, [userId, userPhone]);
 
   const openSavedFromResultsFlow = useCallback(() => {
     setSavedViaResultsFlow(true);
@@ -361,14 +361,14 @@ export default function CourtMapApp() {
     if (!userId) return;
     setBookingsLoading(true);
     try {
-      const result = await getBookings(userId);
+      const result = await getBookings(userId, userPhone || undefined);
       setBookings(result);
     } catch (err) {
       console.error('Failed to load bookings:', err);
     } finally {
       setBookingsLoading(false);
     }
-  }, [userId]);
+  }, [userId, userPhone]);
 
   const handleCancelBooking = useCallback(
     async (id: string) => {

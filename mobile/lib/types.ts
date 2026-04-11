@@ -46,6 +46,7 @@ export interface VenueResult {
   googleUrl: string | null;
   hasMemberPricing?: boolean;
   use30MinSlots?: boolean;
+  zaloId?: string | null;
   pricingTables?: StructuredPricingTable[] | null;
   payments?: VenuePaymentResult[];
   distance?: number;
@@ -75,6 +76,16 @@ export interface BookingSlot {
   price: number;
 }
 
+export interface EditHistoryEntry {
+  timestamp: string;
+  oldSlots: BookingSlot[];
+  newSlots: BookingSlot[];
+  oldPrice: number;
+  newPrice: number;
+  priceDelta: number;
+  supplementaryProofUrl?: string | null;
+}
+
 export type BookingStatus = 'pending' | 'payment_submitted' | 'paid' | 'canceled';
 
 export interface BookingResult {
@@ -99,6 +110,8 @@ export interface BookingResult {
   paymentConfirmedAt?: string | null;
   reviewedAt?: string | null;
   reviewedBy?: string | null;
+  editHistory?: EditHistoryEntry[] | null;
+  supplementaryProofs?: string[] | null;
   status: BookingStatus;
   createdAt: string;
   updatedAt: string;

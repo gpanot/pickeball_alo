@@ -79,6 +79,7 @@ export default function VenueRoute() {
       onViewBookings={onViewBookings}
       onVenueLoaded={onVenueLoaded}
       editBookingId={bookingBeingEdited?.id ?? null}
+      editBooking={bookingForThisVenue}
       t={t}
     />
   );

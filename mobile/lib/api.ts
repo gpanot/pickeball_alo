@@ -59,8 +59,10 @@ export async function createBooking(data: {
   return res.json();
 }
 
-export async function getBookings(userId: string): Promise<BookingResult[]> {
-  const res = await fetch(`${BASE}/api/bookings?userId=${encodeURIComponent(userId)}`);
+export async function getBookings(userId: string, userPhone?: string): Promise<BookingResult[]> {
+  let url = `${BASE}/api/bookings?userId=${encodeURIComponent(userId)}`;
+  if (userPhone) url += `&userPhone=${encodeURIComponent(userPhone)}`;
+  const res = await fetch(url);
   if (!res.ok) throw new Error('Failed to fetch bookings');
   return res.json();
 }
@@ -101,19 +103,24 @@ export async function updateBooking(
     date: string;
     slots: BookingSlot[];
     totalPrice: number;
+    supplementaryProofUrl?: string;
   },
 ): Promise<BookingResult> {
+  const payload: Record<string, unknown> = {
+    userId: data.userId,
+    userName: data.userName,
+    userPhone: data.userPhone,
+    date: data.date,
+    slots: data.slots,
+    totalPrice: data.totalPrice,
+  };
+  if (data.supplementaryProofUrl) {
+    payload.supplementaryProofUrl = data.supplementaryProofUrl;
+  }
   const res = await fetch(`${BASE}/api/bookings/${encodeURIComponent(id)}`, {
     method: 'PATCH',
     headers: { 'Content-Type': 'application/json' },
-    body: JSON.stringify({
-      userId: data.userId,
-      userName: data.userName,
-      userPhone: data.userPhone,
-      date: data.date,
-      slots: data.slots,
-      totalPrice: data.totalPrice,
-    }),
+    body: JSON.stringify(payload),
   });
   if (res.status === 409) {
     const err = await res.json().catch(() => ({}));

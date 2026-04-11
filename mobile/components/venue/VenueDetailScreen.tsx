@@ -139,6 +139,8 @@ interface VenueDetailScreenProps {
   onVenueLoaded?: (v: VenueResult) => void;
   /** When set, confirm step PATCHes this booking instead of POST new. */
   editBookingId?: string | null;
+  /** Full booking object when editing -- used for price delta checks on paid bookings. */
+  editBooking?: BookingResult | null;
   t: ThemeTokens;
 }
 
@@ -165,6 +167,7 @@ export default function VenueDetailScreen({
   onViewBookings,
   onVenueLoaded,
   editBookingId = null,
+  editBooking = null,
   t,
 }: VenueDetailScreenProps) {
   const insets = useSafeAreaInsets();
@@ -425,6 +428,7 @@ export default function VenueDetailScreen({
                 defaultName={userName}
                 defaultPhone={userPhone}
                 editBookingId={editBookingId}
+                editBooking={editBooking}
                 onPersistPlayerProfile={onPersistPlayerProfile}
                 onBack={() => setStep('detail')}
                 onSuccess={handleBookingSuccess}
@@ -432,7 +436,13 @@ export default function VenueDetailScreen({
               />
             ) : step === 'confirmation' && completedBooking && venue ? (
               <View style={{ flex: 1, minHeight: 0 }}>
-                <BookingConfirmation booking={completedBooking} venue={venue} userId={userId} t={t} />
+                <BookingConfirmation
+                  booking={completedBooking}
+                  venue={venue}
+                  userId={userId}
+                  t={t}
+                  onShowMyBooking={onViewBookings}
+                />
               </View>
             ) : (
             <ScrollView

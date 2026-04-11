@@ -10,14 +10,19 @@ const PAYMENT_DEADLINE_MINUTES = 5;
 
 export async function GET(req: NextRequest) {
   const userId = req.nextUrl.searchParams.get('userId');
+  const userPhone = req.nextUrl.searchParams.get('userPhone');
   if (!userId) {
     return NextResponse.json({ error: 'userId required' }, { status: 400 });
   }
 
+  const where: Prisma.BookingWhereInput = userPhone
+    ? { OR: [{ userId }, { userPhone }] }
+    : { userId };
+
   await autoCancelExpiredBookings(prisma, { userId });
 
   const bookings = await prisma.booking.findMany({
-    where: { userId },
+    where,
     orderBy: { createdAt: 'desc' },
   });
 

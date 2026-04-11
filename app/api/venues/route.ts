@@ -109,6 +109,7 @@ export async function GET(req: NextRequest) {
       googleUrl: v.googleUrl,
       hasMemberPricing: v.hasMemberPricing,
       use30MinSlots: v.use30MinSlots,
+      zaloId: v.zaloId,
       pricingTables: v.pricingTables.map((t) => ({
         id: t.id,
         name: t.name,

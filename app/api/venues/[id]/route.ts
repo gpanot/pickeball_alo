@@ -53,6 +53,7 @@ export async function GET(
     googleUrl: venue.googleUrl,
     hasMemberPricing: venue.hasMemberPricing,
     use30MinSlots: venue.use30MinSlots,
+    zaloId: venue.zaloId,
     pricingTables: venue.pricingTables.map((t) => ({
       id: t.id,
       name: t.name,

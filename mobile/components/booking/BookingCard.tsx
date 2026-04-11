@@ -23,26 +23,15 @@ function BookingCard({ booking, onCancel, onEdit, onPress, t }: BookingCardProps
   const config = STATUS_CONFIG[booking.status] || STATUS_CONFIG.pending;
   const slots = booking.slots as BookingSlot[];
   const isCanceled = booking.status === 'canceled';
-  const canCancel = booking.status === 'pending' || booking.status === 'payment_submitted';
-  const canEdit = booking.status === 'pending' && onEdit != null;
+  const canCancel = booking.status === 'pending';
+  const canEdit = booking.status !== 'canceled' && onEdit != null;
   const statusColor = t[config.colorKey];
 
   const requestCancel = () => {
-    if (booking.status === 'payment_submitted') {
-      Alert.alert(
-        'Cancel booking?',
-        'If you already transferred money, contact the venue for a refund.',
-        [
-          { text: 'No', style: 'cancel' },
-          { text: 'Yes', style: 'destructive', onPress: () => onCancel(booking.id) },
-        ],
-      );
-    } else {
-      Alert.alert('Cancel booking?', 'This cannot be undone.', [
-        { text: 'No', style: 'cancel' },
-        { text: 'Yes', style: 'destructive', onPress: () => onCancel(booking.id) },
-      ]);
-    }
+    Alert.alert('Cancel booking?', 'This cannot be undone.', [
+      { text: 'No', style: 'cancel' },
+      { text: 'Yes', style: 'destructive', onPress: () => onCancel(booking.id) },
+    ]);
   };
 
   return (
@@ -79,6 +68,16 @@ function BookingCard({ booking, onCancel, onEdit, onPress, t }: BookingCardProps
             style={[styles.payBtn, { backgroundColor: t.accent }]}
           >
             <Text style={{ color: '#000', fontSize: 12, fontWeight: '800' }}>Pay now</Text>
+          </Pressable>
+        ) : booking.status === 'payment_submitted' ? (
+          <Pressable
+            onPress={(e) => {
+              e?.stopPropagation?.();
+              onPress();
+            }}
+            style={[styles.secondaryBtn, { borderColor: t.accent }]}
+          >
+            <Text style={{ color: t.accent, fontSize: 12, fontWeight: '700' }}>View progress</Text>
           </Pressable>
         ) : null}
         {canEdit ? (

@@ -9,6 +9,7 @@ interface BookingConfirmationProps {
   venue: VenueResult;
   userId: string;
   t: ThemeTokens;
+  onShowMyBooking?: () => void;
 }
 
 export default function BookingConfirmation({
@@ -16,6 +17,7 @@ export default function BookingConfirmation({
   venue,
   userId,
   t,
+  onShowMyBooking,
 }: BookingConfirmationProps) {
   const [live, setLive] = useState(booking);
 
@@ -29,6 +31,7 @@ export default function BookingConfirmation({
         compact
         scrollEnabled={false}
         onBookingUpdated={setLive}
+        onShowMyBooking={onShowMyBooking}
       />
     </View>
   );

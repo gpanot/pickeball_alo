@@ -1,7 +1,10 @@
 import AsyncStorage from '@react-native-async-storage/async-storage';
 import { useCallback, useEffect, useState } from 'react';
 
-export function useAsyncStorage<T>(key: string, initialValue: T): [T, (v: T | ((prev: T) => T)) => Promise<void>] {
+export function useAsyncStorage<T>(
+  key: string,
+  initialValue: T,
+): [T, (v: T | ((prev: T) => T)) => Promise<void>, boolean] {
   const [state, setState] = useState<T>(initialValue);
   const [hydrated, setHydrated] = useState(false);
 
@@ -36,5 +39,5 @@ export function useAsyncStorage<T>(key: string, initialValue: T): [T, (v: T | ((
     [key],
   );
 
-  return [hydrated ? state : initialValue, setValue];
+  return [hydrated ? state : initialValue, setValue, hydrated];
 }

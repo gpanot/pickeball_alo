@@ -38,7 +38,25 @@ type PlayerUpdateBody = {
   date?: string;
   userName?: string;
   userPhone?: string;
+  supplementaryProofUrl?: string;
 };
+
+const EDITABLE_STATUSES = new Set(['pending', 'payment_submitted', 'paid']);
+
+function buildEditHistoryEntry(
+  existing: { slots: unknown; totalPrice: number },
+  body: { slots: unknown; totalPrice: number; supplementaryProofUrl?: string },
+) {
+  return {
+    timestamp: new Date().toISOString(),
+    oldSlots: existing.slots,
+    newSlots: body.slots,
+    oldPrice: existing.totalPrice,
+    newPrice: body.totalPrice,
+    priceDelta: body.totalPrice - existing.totalPrice,
+    supplementaryProofUrl: body.supplementaryProofUrl || null,
+  };
+}
 
 async function playerUpdateBookingSlots(
   id: string,
@@ -56,12 +74,37 @@ async function playerUpdateBookingSlots(
       if (existing.userId !== body.userId) {
         return { kind: 'err' as const, httpStatus: 403, message: 'Forbidden' };
       }
-      if (existing.status !== 'pending') {
+      if (!EDITABLE_STATUSES.has(existing.status)) {
         return {
           kind: 'err' as const,
           httpStatus: 400,
-          message: 'Only pending bookings can be edited',
+          message: 'This booking cannot be edited',
         };
+      }
+
+      const isPaid = existing.status === 'payment_submitted' || existing.status === 'paid';
+
+      if (isPaid) {
+        const priceDelta = body.totalPrice - existing.totalPrice;
+        if (priceDelta < 0) {
+          return {
+            kind: 'err' as const,
+            httpStatus: 400,
+            message: 'The new slot has a lower price. Please contact the court directly to adjust.',
+          };
+        }
+        if (priceDelta > 0) {
+          if (
+            typeof body.supplementaryProofUrl !== 'string' ||
+            !body.supplementaryProofUrl.trim()
+          ) {
+            return {
+              kind: 'err' as const,
+              httpStatus: 400,
+              message: 'Supplementary payment proof is required for the price difference',
+            };
+          }
+        }
       }
 
       const nextDate =
@@ -87,11 +130,35 @@ async function playerUpdateBookingSlots(
 
       await markSlotsBooked(tx, resolved.slotIds, true);
 
+      const historyEntry = buildEditHistoryEntry(existing, body);
+      const prevHistory = Array.isArray(existing.editHistory) ? existing.editHistory : [];
+      const prevProofs = Array.isArray(existing.supplementaryProofs)
+        ? existing.supplementaryProofs
+        : [];
+
       const data: Prisma.BookingUpdateInput = {
         slots: body.slots as Prisma.InputJsonValue,
         totalPrice: body.totalPrice,
         date: nextDate,
+        editHistory: [...prevHistory, historyEntry] as Prisma.InputJsonValue,
       };
+
+      if (
+        body.supplementaryProofUrl &&
+        typeof body.supplementaryProofUrl === 'string' &&
+        body.supplementaryProofUrl.trim()
+      ) {
+        data.supplementaryProofs = [
+          ...prevProofs,
+          body.supplementaryProofUrl.trim(),
+        ] as Prisma.InputJsonValue;
+      }
+
+      if (existing.status === 'pending' && existing.paymentProofUrl) {
+        data.paymentProofUrl = null;
+        data.paymentSubmittedAt = null;
+      }
+
       if (typeof body.userName === 'string' && body.userName.trim()) {
         data.userName = body.userName.trim();
       }
@@ -231,8 +298,26 @@ export async function PATCH(
         data.paymentNote = bodyStatus.paymentNote.trim();
       }
     } else if (existing.status === 'payment_submitted' && status === 'canceled') {
-      if (!isOwner && !isAdmin) {
-        return { kind: 'err', message: 'Forbidden', httpStatus: 403 };
+      if (!isAdmin) {
+        return {
+          kind: 'err',
+          message: 'Booking is locked after payment proof submission. Please contact the court to cancel.',
+          httpStatus: 400,
+        };
+      }
+      data.reviewedAt = now;
+      data.reviewedBy = reviewedBy;
+      if (typeof bodyStatus.adminNote === 'string') {
+        data.adminNote = bodyStatus.adminNote.trim() || null;
+      }
+      await freeSlotsForBooking(tx, existing.venueId, existing.date, existing.slots);
+    } else if (existing.status === 'paid' && status === 'canceled') {
+      if (!isAdmin) {
+        return {
+          kind: 'err',
+          message: 'Booking is locked after payment approval. Please contact the court to cancel.',
+          httpStatus: 400,
+        };
       }
       data.reviewedAt = now;
       data.reviewedBy = reviewedBy;

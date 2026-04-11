@@ -32,6 +32,8 @@ model Venue {
   use30MinSlots    Boolean         @default(true)
   /// AloBo venue slug extracted from datlich.alobo.vn URL (e.g. "sport_65th_street_pickleball").
   aloboSlug        String?
+  /// Zalo handle for "Contact Court" deep link (opens https://zalo.me/{zaloId}).
+  zaloId           String?
   courts           Court[]
   bookings         Booking[]
   pricingTables    PricingTable[]
@@ -139,6 +141,10 @@ model Booking {
   paymentProofUrl      String?
   /// Auto-cancel deadline: booking is cancelled if proof is not uploaded by this time.
   paymentDeadline      DateTime?
+  /// JSON array logging each slot edit (timestamp, old/new slots, price delta, supplementary proof).
+  editHistory          Json?
+  /// JSON array of supplementary payment proof URLs for top-up scenarios.
+  supplementaryProofs  Json?
   createdAt            DateTime  @default(now())
   updatedAt            DateTime  @updatedAt
 

@@ -1,6 +1,6 @@
 import React, { useCallback, useEffect, useMemo, useState } from 'react';
 import { View, Text, Pressable, FlatList, StyleSheet } from 'react-native';
-import { useRouter, type Href } from 'expo-router';
+import { useFocusEffect, useRouter, type Href } from 'expo-router';
 import { Ionicons } from '@expo/vector-icons';
 import { BackIcon } from '@/components/Icons';
 import ScreenTopBar from '@/components/ui/ScreenTopBar';
@@ -18,7 +18,13 @@ type TabKey = 'upcoming' | 'past' | 'all';
 export default function BookingsListRoute() {
   const router = useRouter();
   const ctx = useCourtMap();
-  const { t, bookings, bookingsLoading, backFromSavedOrBookings, handleCancelBooking, beginEditBooking, userId } = ctx;
+  const { t, bookings, bookingsLoading, backFromSavedOrBookings, handleCancelBooking, beginEditBooking, userId, loadBookings } = ctx;
+
+  useFocusEffect(
+    useCallback(() => {
+      void loadBookings();
+    }, [loadBookings]),
+  );
   const [section, setSection] = useState<Section>('courts');
   const [tab, setTab] = useState<TabKey>('upcoming');
   const [coachSessions, setCoachSessions] = useState<CoachSessionResult[]>([]);

@@ -1,9 +1,22 @@
 import React, { useEffect, useState } from 'react';
-import { View, Text, Pressable, TextInput, StyleSheet, ActivityIndicator, ScrollView } from 'react-native';
+import {
+  View,
+  Text,
+  Pressable,
+  TextInput,
+  StyleSheet,
+  ActivityIndicator,
+  ScrollView,
+  Alert,
+  Image,
+} from 'react-native';
+import * as ImagePicker from 'expo-image-picker';
 import { BackIcon } from '@/components/Icons';
 import { createBooking, updateBooking } from '@/lib/api';
+import ContactCourtCTA from '@/components/booking/ContactCourtCTA';
 import type { ThemeTokens } from '@/lib/theme';
 import type { VenueResult, BookingResult } from '@/lib/types';
+import { formatVndFull, formatBookingOrderRef } from '@/lib/formatters';
 
 interface SlotInfo {
   courtName: string;
@@ -20,6 +33,7 @@ interface BookingFormProps {
   defaultName: string;
   defaultPhone: string;
   editBookingId?: string | null;
+  editBooking?: BookingResult | null;
   onPersistPlayerProfile?: (name: string, phone: string) => void;
   onBack: () => void;
   onSuccess: (booking: BookingResult) => void;
@@ -35,6 +49,7 @@ export default function BookingForm({
   defaultName,
   defaultPhone,
   editBookingId = null,
+  editBooking = null,
   onPersistPlayerProfile,
   onBack,
   onSuccess,
@@ -44,8 +59,16 @@ export default function BookingForm({
   const [phone, setPhone] = useState(defaultPhone);
   const [loading, setLoading] = useState(false);
   const [error, setError] = useState('');
+  const [supplementaryProofUri, setSupplementaryProofUri] = useState<string | null>(null);
 
   const isEditingExisting = Boolean(editBookingId && editBookingId !== '');
+  const isPaidEdit =
+    isEditingExisting &&
+    editBooking != null &&
+    (editBooking.status === 'payment_submitted' || editBooking.status === 'paid');
+  const priceDelta = isPaidEdit ? totalPrice - editBooking!.totalPrice : 0;
+  const needsSupplementaryProof = isPaidEdit && priceDelta > 0;
+  const isLowerPrice = isPaidEdit && priceDelta < 0;
 
   useEffect(() => {
     if (isEditingExisting) return;
@@ -53,13 +76,41 @@ export default function BookingForm({
     setPhone(defaultPhone);
   }, [defaultName, defaultPhone, isEditingExisting]);
 
+  const pickSupplementaryProof = async () => {
+    const result = await ImagePicker.launchImageLibraryAsync({
+      mediaTypes: ['images'],
+      quality: 0.7,
+      base64: true,
+    });
+    if (result.canceled || !result.assets?.[0]) return;
+    const asset = result.assets[0];
+    if (asset.base64) {
+      setSupplementaryProofUri(`data:image/jpeg;base64,${asset.base64}`);
+    } else {
+      setSupplementaryProofUri(asset.uri);
+    }
+  };
+
   const handleSubmit = async () => {
+    if (isLowerPrice) {
+      Alert.alert(
+        'Cannot change to a lower price slot',
+        'The new slot has a lower price. Please contact the court directly to adjust.',
+      );
+      return;
+    }
+
     const resolvedName = (isEditingExisting ? defaultName : name).trim();
     const resolvedPhone = (isEditingExisting ? defaultPhone : phone).trim();
     if (!resolvedName || !resolvedPhone) {
       setError('Name and phone number are required');
       return;
     }
+    if (needsSupplementaryProof && !supplementaryProofUri) {
+      setError('Please upload proof of the additional payment before submitting');
+      return;
+    }
+
     setLoading(true);
     setError('');
     const slotsPayload = selectedSlots.map((s) => ({
@@ -78,6 +129,7 @@ export default function BookingForm({
               date: searchDate,
               slots: slotsPayload,
               totalPrice,
+              supplementaryProofUrl: supplementaryProofUri ?? undefined,
             })
           : await createBooking({
               venueId: venue.id,
@@ -153,6 +205,79 @@ export default function BookingForm({
           </View>
         </View>
 
+        {isPaidEdit && priceDelta !== 0 ? (
+          <View
+            style={[
+              styles.deltaCard,
+              {
+                backgroundColor: isLowerPrice ? `${t.red}11` : `${t.accent}11`,
+                borderColor: isLowerPrice ? t.red : t.accent,
+              },
+            ]}
+          >
+            {isLowerPrice ? (
+              <>
+                <Text style={{ fontSize: 14, fontWeight: '700', color: t.red, marginBottom: 6 }}>
+                  Lower price slot selected
+                </Text>
+                <Text style={{ fontSize: 13, color: t.textSec, lineHeight: 18 }}>
+                  The new slot costs {formatVndFull(Math.abs(priceDelta))} less. Please contact the court directly to adjust your booking.
+                </Text>
+              </>
+            ) : (
+              <>
+                <Text style={{ fontSize: 14, fontWeight: '700', color: t.accent, marginBottom: 6 }}>
+                  Additional payment required
+                </Text>
+                <Text style={{ fontSize: 13, color: t.textSec, lineHeight: 18 }}>
+                  The new slot costs {formatVndFull(priceDelta)} more. Please transfer the difference and upload proof below.
+                </Text>
+              </>
+            )}
+          </View>
+        ) : null}
+
+        {isLowerPrice && editBooking ? (
+          <View style={{ marginBottom: 16 }}>
+            <ContactCourtCTA
+              bookingRef={formatBookingOrderRef(editBooking.orderId)}
+              courtName={venue.name}
+              courtPhone={venue.phone}
+              courtZalo={venue.zaloId}
+              t={t}
+            />
+          </View>
+        ) : null}
+
+        {needsSupplementaryProof ? (
+          <View style={{ marginBottom: 16 }}>
+            <Text style={[styles.label, { color: t.textMuted }]}>
+              Proof of additional payment ({formatVndFull(priceDelta)})
+            </Text>
+            {supplementaryProofUri ? (
+              <View style={{ alignItems: 'center', gap: 8 }}>
+                <Image
+                  source={{ uri: supplementaryProofUri }}
+                  style={{ width: 200, height: 200, borderRadius: 12 }}
+                  resizeMode="contain"
+                />
+                <Pressable onPress={pickSupplementaryProof}>
+                  <Text style={{ color: t.accent, fontWeight: '700', fontSize: 13 }}>Change image</Text>
+                </Pressable>
+              </View>
+            ) : (
+              <Pressable
+                onPress={pickSupplementaryProof}
+                style={[styles.uploadBtn, { borderColor: t.accent, backgroundColor: t.accentBg }]}
+              >
+                <Text style={{ color: t.accent, fontWeight: '700', fontSize: 14 }}>
+                  Upload payment proof
+                </Text>
+              </Pressable>
+            )}
+          </View>
+        ) : null}
+
         {isEditingExisting ? (
           <View
             style={[
@@ -218,17 +343,24 @@ export default function BookingForm({
         </Pressable>
         <Pressable
           onPress={handleSubmit}
-          disabled={loading}
+          disabled={loading || isLowerPrice}
           style={[
             styles.footerCta,
-            { backgroundColor: t.accent, opacity: loading ? 0.7 : 1 },
+            {
+              backgroundColor: isLowerPrice ? t.textMuted : t.accent,
+              opacity: loading ? 0.7 : 1,
+            },
           ]}
         >
           {loading ? (
             <ActivityIndicator color="#000" />
           ) : (
             <Text style={styles.footerCtaText}>
-              {editBookingId ? 'UPDATE BOOKING REQUEST' : 'SEND BOOKING REQUEST'}
+              {isLowerPrice
+                ? 'CONTACT COURT TO CHANGE'
+                : editBookingId
+                  ? 'UPDATE BOOKING REQUEST'
+                  : 'SEND BOOKING REQUEST'}
             </Text>
           )}
         </Pressable>
@@ -255,6 +387,12 @@ const styles = StyleSheet.create({
     marginTop: 6,
     borderTopWidth: 1,
   },
+  deltaCard: {
+    borderRadius: 14,
+    borderWidth: 1,
+    padding: 14,
+    marginBottom: 16,
+  },
   label: {
     fontSize: 12,
     fontWeight: '700',
@@ -268,6 +406,13 @@ const styles = StyleSheet.create({
     padding: 16,
     borderWidth: 1,
     marginBottom: 20,
+  },
+  uploadBtn: {
+    paddingVertical: 14,
+    paddingHorizontal: 20,
+    borderRadius: 14,
+    borderWidth: 1,
+    alignItems: 'center',
   },
   footer: {
     flexDirection: 'row',

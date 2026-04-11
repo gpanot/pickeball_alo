@@ -42,7 +42,7 @@ function useCourtMapInner() {
 
   const [savedViaResultsFlow, setSavedViaResultsFlow] = useState(false);
   const [savedIds, setSavedIds] = useAsyncStorage<string[]>('cm_saved', []);
-  const [userId, setUserId] = useAsyncStorage('cm_userId', '');
+  const [userId, setUserId, userIdHydrated] = useAsyncStorage('cm_userId', '');
   const [userName, setUserName] = useAsyncStorage('cm_userName', '');
   const [userPhone, setUserPhone] = useAsyncStorage('cm_userPhone', '');
   const [userGender, setUserGender] = useAsyncStorage<string>('cm_userGender', '');
@@ -106,10 +106,10 @@ function useCourtMapInner() {
   const savedSet = useMemo(() => new Set(savedIds), [savedIds]);
 
   useEffect(() => {
-    if (!userId) {
+    if (userIdHydrated && !userId) {
       void setUserId(generateId());
     }
-  }, [userId, setUserId]);
+  }, [userIdHydrated, userId, setUserId]);
 
   useEffect(() => {
     getVenueCatalogCount()
@@ -377,7 +377,7 @@ function useCourtMapInner() {
 
   const beginEditBooking = useCallback(
     async (booking: BookingResult) => {
-      if (booking.status === 'paid' || booking.status === 'canceled') return;
+      if (booking.status === 'canceled') return;
       if (navigatingToVenueRef.current) return;
       const days = getNextDays(7);
       const idx = days.findIndex((d) => toLocalDateKey(d) === booking.date);
@@ -427,26 +427,32 @@ function useCourtMapInner() {
     if (!userId) return;
     setBookingsLoading(true);
     try {
-      const result = await getBookings(userId);
+      const result = await getBookings(userId, userPhone || undefined);
       setBookings(result);
     } catch (err) {
       console.error('Failed to load bookings:', err);
     } finally {
       setBookingsLoading(false);
     }
-  }, [userId]);
+  }, [userId, userPhone]);
 
   const handleCancelBooking = useCallback(
     async (id: string) => {
       if (!userId) return;
+      const booking = bookings.find((b) => b.id === id);
+      if (booking && booking.status !== 'pending') {
+        return 'contact_court' as const;
+      }
       try {
         const updated = await cancelBooking(id, userId);
         setBookings((prev) => prev.map((b) => (b.id === id ? updated : b)));
+        return 'ok' as const;
       } catch (err) {
         console.error('Failed to cancel booking:', err);
+        return 'error' as const;
       }
     },
-    [userId],
+    [userId, bookings],
   );
 
   const handleSaveProfile = useCallback(
@@ -562,15 +568,15 @@ function useCourtMapInner() {
 
   const goMyBookingsTab = useCallback(() => {
     if (segments.includes('(bookings)')) return;
-    if (userId && bookings.length === 0) {
+    if (userId) {
       setBookingsLoading(true);
-      getBookings(userId)
+      getBookings(userId, userPhone || undefined)
         .then(setBookings)
         .catch(() => {})
         .finally(() => setBookingsLoading(false));
     }
     router.replace('/(tabs)/(bookings)');
-  }, [userId, bookings.length, router, segments]);
+  }, [userId, userPhone, router, segments]);
 
   const openSavedFromResultsFlow = useCallback(() => {
     setSavedViaResultsFlow(true);

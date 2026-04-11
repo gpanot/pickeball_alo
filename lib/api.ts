@@ -57,8 +57,10 @@ export async function createBooking(data: {
   return res.json();
 }
 
-export async function getBookings(userId: string): Promise<BookingResult[]> {
-  const res = await fetch(`${BASE}/api/bookings?userId=${userId}`);
+export async function getBookings(userId: string, userPhone?: string): Promise<BookingResult[]> {
+  let url = `${BASE}/api/bookings?userId=${encodeURIComponent(userId)}`;
+  if (userPhone) url += `&userPhone=${encodeURIComponent(userPhone)}`;
+  const res = await fetch(url);
   if (!res.ok) throw new Error('Failed to fetch bookings');
   return res.json();
 }
