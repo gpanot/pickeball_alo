@@ -29,6 +29,10 @@ export interface CourtMapMapScreenProps {
   onBookMapToggle?: () => void;
   /** Book map only: load venues by map center + radius (nearby first, wider when zoomed out). */
   exploreMapFetch?: (opts: { lat: number; lng: number; radiusKm: number; reason: string }) => void;
+  /** Book map finder variant: show a simple back top bar instead of brand header. */
+  bookHomeSimpleBack?: boolean;
+  /** When true, auto-center/zoom to user once on mount (same as tapping locate). */
+  focusUserOnMount?: boolean;
   /** Cached user location from context (survives tab switches). */
   initialUserLoc?: { lat: number; lng: number } | null;
   /** Callback to persist user location into context. */

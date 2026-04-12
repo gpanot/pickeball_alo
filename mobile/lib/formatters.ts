@@ -156,6 +156,24 @@ export const START_HOUR_OPTIONS: readonly { hour: number; label: string }[] = ((
   return out;
 })();
 
+function optionHourToSortableMinutes(hour: number): number {
+  return hour === 0 ? 24 * 60 : hour * 60;
+}
+
+export function getEarliestAllowedStartTimeIndex(
+  selectedDateIndex: number,
+  now: Date = new Date(),
+): number {
+  // Only restrict start time when booking for "today" (index 0).
+  if (selectedDateIndex !== 0) return 0;
+
+  const roundedHour = now.getHours() + (now.getMinutes() > 0 ? 1 : 0);
+  const roundedMinutes = roundedHour * 60;
+  const firstValid = START_HOUR_OPTIONS.findIndex((opt) => optionHourToSortableMinutes(opt.hour) >= roundedMinutes);
+  if (firstValid >= 0) return firstValid;
+  return START_HOUR_OPTIONS.length - 1;
+}
+
 export function getStartHourLabel(selectedTimeIndex: number): string {
   return START_HOUR_OPTIONS[selectedTimeIndex]?.label ?? '—';
 }

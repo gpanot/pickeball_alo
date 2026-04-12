@@ -17,7 +17,6 @@ export default function BookMapRoute() {
     selectedDuration,
     selectedTime,
     searchQuery,
-    backFromResults,
     handleSort,
     toggleSaved,
     openDetail,
@@ -27,7 +26,6 @@ export default function BookMapRoute() {
     setSelectedTime,
     refetchVenues,
     fetchExploreMapVenues,
-    catalogVenueCount,
     mapUserLoc,
     setMapUserLoc,
     mapGeoInitDone,
@@ -56,7 +54,7 @@ export default function BookMapRoute() {
         selectedDuration={selectedDuration}
         selectedTime={selectedTime}
         searchQuery={searchQuery}
-        onBack={backFromResults}
+        onBack={goBookHome}
         onSort={handleSort}
         onToggleSaved={toggleSaved}
         onOpenVenue={openVenueFromBookMap}
@@ -68,9 +66,8 @@ export default function BookMapRoute() {
         t={t}
         hasFlowPills={false}
         bookHomeTopBar
-        bookMapToggleLabel="Book"
-        onBookMapToggle={goBookHome}
-        catalogVenueCount={catalogVenueCount}
+        bookHomeSimpleBack
+        focusUserOnMount
         exploreMapFetch={fetchExploreMapVenues}
         initialUserLoc={mapUserLoc}
         onUserLocResolved={setMapUserLoc}

@@ -23,6 +23,7 @@ import {
   toLocalDateKey,
   DURATIONS,
   START_HOUR_OPTIONS,
+  getEarliestAllowedStartTimeIndex,
   durationIndexToHalfHourCount,
   pickSlotsForSearch,
 } from '@/mobile/lib/formatters';
@@ -55,7 +56,7 @@ function useCourtMapInner() {
   const [searchQuery, setSearchQuery] = useState('');
   const [selectedDate, setSelectedDate] = useState(0);
   const [selectedDuration, setSelectedDuration] = useState(0);
-  const [selectedTime, setSelectedTime] = useState(4);
+  const [selectedTime, setSelectedTime] = useState(() => getEarliestAllowedStartTimeIndex(0));
   const [sortBy, setSortBy] = useState<SortMode>('distance');
 
   const [venues, setVenues] = useState<VenueResult[]>([]);
@@ -76,6 +77,7 @@ function useCourtMapInner() {
   const [selectedSlots, setSelectedSlots] = useState<Set<string>>(new Set());
   const [savedSearchOpen, setSavedSearchOpen] = useState(false);
   const [savedSearchApplying, setSavedSearchApplying] = useState(false);
+  const [savedHydrationLoading, setSavedHydrationLoading] = useState(false);
   const [savedBookVenue, setSavedBookVenue] = useState<VenueResult | null>(null);
   /** When set, venue detail submit updates this booking instead of creating a new one. */
   const [bookingBeingEdited, setBookingBeingEdited] = useState<BookingResult | null>(null);
@@ -126,7 +128,11 @@ function useCourtMapInner() {
   }, []);
 
   const hideTabBarForBookStack =
-    segments.includes('results') || segments.includes('results-map');
+    segments.includes('results') ||
+    segments.includes('results-map') ||
+    segments.includes('map') ||
+    segments.includes('coach-profile') ||
+    segments.includes('session-booking');
   /** Do not hide tab bar for the venue modal: hiding it shrinks the tab content and the map reflows/jumps. The modal covers the bar visually. */
   const hideTabBar =
     hideTabBarForBookStack || (segments.includes('saved') && savedViaResultsFlow);
@@ -140,12 +146,19 @@ function useCourtMapInner() {
 
   const hydratedSavedRef = useRef(new Set<string>());
   useEffect(() => {
-    if (!Array.isArray(savedIds) || savedIds.length === 0) return;
+    if (!Array.isArray(savedIds) || savedIds.length === 0) {
+      setSavedHydrationLoading(false);
+      return;
+    }
     const inList = new Set(venues.map((v) => v.id));
     const missing = savedIds.filter((id) => !inList.has(id) && !hydratedSavedRef.current.has(id));
-    if (missing.length === 0) return;
+    if (missing.length === 0) {
+      setSavedHydrationLoading(false);
+      return;
+    }
 
     missing.forEach((id) => hydratedSavedRef.current.add(id));
+    setSavedHydrationLoading(true);
 
     const dates = getNextDays(7);
     const dateStr =
@@ -153,38 +166,42 @@ function useCourtMapInner() {
 
     let cancelled = false;
     void (async () => {
-      const settled = await Promise.allSettled(missing.map((id) => getVenue(id, dateStr)));
-      if (cancelled) return;
+      try {
+        const settled = await Promise.allSettled(missing.map((id) => getVenue(id, dateStr)));
+        if (cancelled) return;
 
-      const loaded: VenueResult[] = [];
-      let failedCount = 0;
-      for (const r of settled) {
-        if (r.status === 'fulfilled') {
-          loaded.push(r.value);
-        } else {
-          failedCount += 1;
-        }
-      }
-
-      if (failedCount > 0) {
-        // Keep IDs marked as hydrated to avoid repeated noisy retries for stale/removed venues.
-        console.warn(`Skipped ${failedCount} saved venue(s) that could not be hydrated.`);
-      }
-
-      if (loaded.length === 0) return;
-      setVenues((prev) => {
-        const byId = new Map(prev.map((v) => [v.id, v]));
-        let changed = false;
-        for (const v of loaded) {
-          if (!v?.id) continue;
-          if (!byId.has(v.id)) {
-            byId.set(v.id, v);
-            changed = true;
+        const loaded: VenueResult[] = [];
+        let failedCount = 0;
+        for (const r of settled) {
+          if (r.status === 'fulfilled') {
+            loaded.push(r.value);
+          } else {
+            failedCount += 1;
           }
         }
-        if (!changed) return prev;
-        return Array.from(byId.values());
-      });
+
+        if (failedCount > 0) {
+          // Keep IDs marked as hydrated to avoid repeated noisy retries for stale/removed venues.
+          console.warn(`Skipped ${failedCount} saved venue(s) that could not be hydrated.`);
+        }
+
+        if (loaded.length === 0) return;
+        setVenues((prev) => {
+          const byId = new Map(prev.map((v) => [v.id, v]));
+          let changed = false;
+          for (const v of loaded) {
+            if (!v?.id) continue;
+            if (!byId.has(v.id)) {
+              byId.set(v.id, v);
+              changed = true;
+            }
+          }
+          if (!changed) return prev;
+          return Array.from(byId.values());
+        });
+      } finally {
+        if (!cancelled) setSavedHydrationLoading(false);
+      }
     })();
 
     return () => { cancelled = true; };
@@ -670,6 +687,7 @@ function useCourtMapInner() {
     savedSearchOpen,
     setSavedSearchOpen,
     savedSearchApplying,
+    savedHydrationLoading,
     savedBookVenue,
     searchDate,
     closeSavedBookSheet,
@@ -715,6 +733,7 @@ function useCourtMapInner() {
     venues, exploreVenues, catalogVenueCount, loading, bookings, bookingsLoading,
     detailVenue, detailJumpToConfirm, detailRefreshing, selectedSlots,
     savedSearchOpen, savedSearchApplying, savedBookVenue, searchDate,
+    savedHydrationLoading,
     closeSavedBookSheet, openSavedBookSheet, refetchVenues,
     loadMoreSearchResults, searchHasMore, searchTotalResults.length,
     refetchExploreVenues, fetchExploreMapVenues, handleSearch, handleSort,

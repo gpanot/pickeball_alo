@@ -1,4 +1,4 @@
-import React, { useEffect, useRef } from 'react';
+import React, { useCallback, useEffect, useMemo, useRef } from 'react';
 import {
   View,
   Text,
@@ -8,7 +8,13 @@ import {
   StyleSheet,
 } from 'react-native';
 import { PinIcon, CloseIcon, LocateIcon } from '@/components/Icons';
-import { formatDateLabel, getNextDays, DURATIONS, START_HOUR_OPTIONS } from '@/lib/formatters';
+import {
+  formatDateLabel,
+  getNextDays,
+  DURATIONS,
+  START_HOUR_OPTIONS,
+  getEarliestAllowedStartTimeIndex,
+} from '@/lib/formatters';
 import type { ThemeTokens } from '@/lib/theme';
 
 function SectionLabel({ label, t }: { label: string; t: ThemeTokens }) {
@@ -49,21 +55,47 @@ export default function SearchFormFields({
   const dates = getNextDays(7);
   const timeScrollRef = useRef<ScrollView>(null);
   const timeBtnPositions = useRef<Record<number, number>>({});
+  const scrollRetryRef = useRef<ReturnType<typeof setTimeout> | null>(null);
+  const earliestAllowedTimeIndex = useMemo(
+    () => getEarliestAllowedStartTimeIndex(selectedDate),
+    [selectedDate],
+  );
 
-  useEffect(() => {
+  const scrollSelectedTimeIntoView = useCallback((attempt = 0) => {
     const x = timeBtnPositions.current[selectedTime];
     if (x != null) {
-      timeScrollRef.current?.scrollTo({ x: Math.max(0, x - 40), animated: true });
+      // Keep selected chip visible near the left edge.
+      timeScrollRef.current?.scrollTo({ x: Math.max(0, x - 12), animated: false });
+      return;
     }
+    if (attempt >= 8) return;
+    if (scrollRetryRef.current) clearTimeout(scrollRetryRef.current);
+    scrollRetryRef.current = setTimeout(() => scrollSelectedTimeIntoView(attempt + 1), 30);
   }, [selectedTime]);
 
-  const chip = (active: boolean) => ({
+  useEffect(() => {
+    if (selectedTime >= earliestAllowedTimeIndex) return;
+    onTimeChange(earliestAllowedTimeIndex);
+  }, [earliestAllowedTimeIndex, onTimeChange, selectedTime]);
+
+  useEffect(() => {
+    scrollSelectedTimeIntoView();
+  }, [scrollSelectedTimeIntoView, selectedDate]);
+
+  useEffect(() => {
+    return () => {
+      if (scrollRetryRef.current) clearTimeout(scrollRetryRef.current);
+    };
+  }, []);
+
+  const chip = (active: boolean, disabled = false) => ({
     paddingVertical: 10,
     paddingHorizontal: 18,
     borderRadius: 12,
-    backgroundColor: active ? t.accent : t.bgCard,
+    backgroundColor: disabled ? t.bg : active ? t.accent : t.bgCard,
     borderWidth: active ? 0 : 1,
-    borderColor: t.border,
+    borderColor: disabled ? t.border : t.border,
+    opacity: disabled ? 0.45 : 1,
   });
 
   return (
@@ -130,14 +162,22 @@ export default function SearchFormFields({
       >
         {START_HOUR_OPTIONS.map((opt, i) => {
           const active = i === selectedTime;
+          const disabled = i < earliestAllowedTimeIndex;
           return (
             <Pressable
               key={`${opt.hour}-${i}`}
               onLayout={(e) => {
                 timeBtnPositions.current[i] = e.nativeEvent.layout.x;
+                if (i === selectedTime) {
+                  timeScrollRef.current?.scrollTo({
+                    x: Math.max(0, e.nativeEvent.layout.x - 12),
+                    animated: false,
+                  });
+                }
               }}
               onPress={() => onTimeChange(i)}
-              style={chip(active)}
+              disabled={disabled}
+              style={chip(active, disabled)}
             >
               <Text style={{ color: active ? '#000' : t.text, fontWeight: '700', fontSize: 14 }}>
                 {opt.label}

@@ -43,6 +43,7 @@ export function CoachCard({
   const ratingLabel =
     ratingOverall != null ? ratingOverall.toFixed(1) : '—';
   const reviewsLabel = reviewCount > 0 ? ` (${reviewCount})` : '';
+  const isNewCoach = reviewCount < 5;
 
   return (
     <Pressable
@@ -73,6 +74,11 @@ export function CoachCard({
         <Text style={[styles.name, { color: theme.text }]} numberOfLines={1}>
           {name}
         </Text>
+        {isNewCoach && (
+          <View style={[styles.newCoachBadge, { backgroundColor: theme.accentBg, borderColor: theme.accent }]}>
+            <Text style={[styles.newCoachBadgeText, { color: theme.accent }]}>New Coach</Text>
+          </View>
+        )}
         <View style={styles.chipRow}>
           {chips.map((s) => (
             <View
@@ -140,6 +146,18 @@ const styles = StyleSheet.create({
     fontSize: fontSize.lg,
     fontWeight: '700',
     marginBottom: spacing.xs,
+  },
+  newCoachBadge: {
+    alignSelf: 'flex-start',
+    borderWidth: 1,
+    borderRadius: borderRadius.full,
+    paddingHorizontal: spacing.sm,
+    paddingVertical: 2,
+    marginBottom: spacing.xs,
+  },
+  newCoachBadgeText: {
+    fontSize: fontSize.xs,
+    fontWeight: '700',
   },
   chipRow: {
     flexDirection: 'row',

@@ -103,22 +103,30 @@ export async function POST(
       ? null
       : String(body.sessionId);
 
-  // Session must be completed to submit a review
+  // Look up linked session for timing validation
+  let sessionRow: {
+    status: string;
+    coachId: string;
+    date: string;
+    startTime: string;
+    endTime: string;
+  } | null = null;
+
   if (sessionId) {
-    const session = await prisma.coachSession.findUnique({
+    sessionRow = await prisma.coachSession.findUnique({
       where: { id: sessionId },
-      select: { status: true, coachId: true },
+      select: { status: true, coachId: true, date: true, startTime: true, endTime: true },
     });
-    if (!session) {
+    if (!sessionRow) {
       return NextResponse.json({ error: 'Session not found' }, { status: 404 });
     }
-    if (session.status !== 'completed') {
+    if (sessionRow.status !== 'completed') {
       return NextResponse.json(
         { error: 'Can only review completed sessions' },
         { status: 400 },
       );
     }
-    if (session.coachId !== id) {
+    if (sessionRow.coachId !== id) {
       return NextResponse.json(
         { error: 'Session does not belong to this coach' },
         { status: 400 },
@@ -131,6 +139,25 @@ export async function POST(
       ? null
       : body.comment;
 
+  // Timing fraud detection: review must be submitted after 100% of session elapsed
+  const now = new Date();
+  let isFlagged = false;
+  let flagReason: string | null = null;
+
+  if (sessionRow) {
+    const [eh, em] = sessionRow.endTime.split(':').map(Number);
+    const sessionEndMs = new Date(`${sessionRow.date}T${String(eh).padStart(2, '0')}:${String(em).padStart(2, '0')}:00+07:00`).getTime();
+    if (now.getTime() < sessionEndMs) {
+      const [sh, sm] = sessionRow.startTime.split(':').map(Number);
+      const sessionStartMs = new Date(`${sessionRow.date}T${String(sh).padStart(2, '0')}:${String(sm).padStart(2, '0')}:00+07:00`).getTime();
+      const durationMs = sessionEndMs - sessionStartMs;
+      const elapsedMs = now.getTime() - sessionStartMs;
+      const pct = durationMs > 0 ? Math.round((elapsedMs / durationMs) * 100) : 0;
+      isFlagged = true;
+      flagReason = `Review submitted at ${pct}% of session (before session end). Session ${sessionRow.startTime}-${sessionRow.endTime} on ${sessionRow.date}.`;
+    }
+  }
+
   // Determine isPublic: player must have >= 3 completed sessions with this coach AND coach must be phoneVerified
   const completedSessionCount = await prisma.coachSession.count({
     where: {
@@ -140,7 +167,7 @@ export async function POST(
     },
   });
 
-  const isPublic = completedSessionCount >= 3 && coach.phoneVerified;
+  const isPublic = !isFlagged && completedSessionCount >= 3 && coach.phoneVerified;
 
   const review = await prisma.$transaction(async (tx) => {
     const created = await tx.coachReview.create({
@@ -156,8 +183,22 @@ export async function POST(
         ratingOverall,
         comment,
         isPublic,
+        ratedAt: now,
+        isFlagged,
+        flagReason,
       },
     });
+
+    // If flagged: immediately delist the coach and lock the profile
+    if (isFlagged) {
+      await tx.coach.update({
+        where: { id },
+        data: {
+          isProfilePublic: false,
+          isProfileLocked: true,
+        },
+      });
+    }
 
     // If this review makes the player reach 3+ sessions AND coach is verified,
     // flip all prior private reviews from this player for this coach to public
@@ -172,8 +213,9 @@ export async function POST(
       });
     }
 
+    // Recompute aggregate ratings (exclude flagged reviews)
     const agg = await tx.coachReview.aggregate({
-      where: { coachId: id },
+      where: { coachId: id, isFlagged: false },
       _avg: {
         ratingOnTime: true,
         ratingFriendly: true,
@@ -181,7 +223,13 @@ export async function POST(
         ratingRecommend: true,
         ratingOverall: true,
       },
-      _count: { _all: true },
+    });
+
+    // Count distinct reviewers (unique players) excluding flagged reviews
+    const uniqueReviewers = await tx.coachReview.findMany({
+      where: { coachId: id, isFlagged: false },
+      distinct: ['userId'],
+      select: { userId: true },
     });
 
     await tx.coach.update({
@@ -192,7 +240,7 @@ export async function POST(
         ratingProfessional: agg._avg.ratingProfessional,
         ratingRecommend: agg._avg.ratingRecommend,
         ratingOverall: agg._avg.ratingOverall,
-        reviewCount: agg._count._all,
+        reviewCount: uniqueReviewers.length,
       },
     });
 

@@ -48,6 +48,7 @@ export async function POST(req: NextRequest) {
     startTime,
     endTime,
     sessionType,
+    groupExtraPlayers,
     userId,
     userName,
     userPhone,
@@ -69,6 +70,16 @@ export async function POST(req: NextRequest) {
 
   if (sessionType !== '1on1' && sessionType !== 'group') {
     return NextResponse.json({ error: 'sessionType must be 1on1 or group' }, { status: 400 });
+  }
+
+  if (groupExtraPlayers != null) {
+    if (
+      typeof groupExtraPlayers !== 'number' ||
+      !Number.isInteger(groupExtraPlayers) ||
+      groupExtraPlayers < 0
+    ) {
+      return NextResponse.json({ error: 'groupExtraPlayers must be a non-negative integer' }, { status: 400 });
+    }
   }
 
   const coach = await prisma.coach.findUnique({ where: { id: coachId } });
@@ -111,19 +122,15 @@ export async function POST(req: NextRequest) {
   const link = await prisma.coachCourtLink.findUnique({
     where: { coachId_venueId: { coachId, venueId } },
   });
-  if (!link || !link.isActive || link.courtIds.length === 0) {
-    return NextResponse.json(
-      { error: 'Coach has no active court link for this venue' },
-      { status: 400 },
-    );
-  }
-
-  const firstCourtId = link.courtIds[0]!;
+  const linkedCourtIds = link?.isActive ? link.courtIds : [];
   const court = await prisma.court.findFirst({
-    where: { id: firstCourtId, venueId },
+    where: linkedCourtIds.length > 0
+      ? { venueId, id: { in: linkedCourtIds }, isAvailable: true }
+      : { venueId, isAvailable: true },
+    orderBy: { name: 'asc' },
   });
   if (!court) {
-    return NextResponse.json({ error: 'Linked court not found at venue' }, { status: 400 });
+    return NextResponse.json({ error: 'No available court found at this venue' }, { status: 400 });
   }
 
   // Validate coach availability covers the requested slot
@@ -183,7 +190,7 @@ export async function POST(req: NextRequest) {
   }));
 
   const courtFee = await computeCourtFeeVnd({
-    courtId: firstCourtId,
+    courtId: court.id,
     date,
     startTime,
     endTime,
@@ -193,14 +200,24 @@ export async function POST(req: NextRequest) {
   });
 
   const hours = sessionDurationHours(startTime, endTime);
+  const extraPlayers =
+    sessionType === 'group'
+      ? Math.min(
+          Math.max(
+            1,
+            typeof groupExtraPlayers === 'number' ? groupExtraPlayers : 1,
+          ),
+          Math.max(1, coach.maxGroupSize) - 1,
+        )
+      : 0;
   const hourly =
     sessionType === 'group'
-      ? (coach.hourlyRateGroup ?? coach.hourlyRate1on1)
+      ? coach.hourlyRate1on1 + (extraPlayers * (coach.hourlyRateGroup ?? coach.hourlyRate1on1))
       : coach.hourlyRate1on1;
   const coachFee = Math.round(hours * hourly);
   const totalPerPlayer = coachFee + courtFee;
 
-  const maxPlayers = sessionType === 'group' ? coach.maxGroupSize : 1;
+  const maxPlayers = sessionType === 'group' ? extraPlayers + 1 : 1;
 
   // Credit payment validation
   let creditId: string | null = null;

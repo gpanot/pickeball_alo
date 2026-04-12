@@ -207,6 +207,8 @@ model Coach {
   reviewCount         Int                 @default(0)
   isActive            Boolean             @default(true)
   isProfilePublic     Boolean             @default(true)
+  /// When true, coach cannot re-enable isProfilePublic; only a super-admin can clear this.
+  isProfileLocked     Boolean             @default(false)
 
   subscriptionPlan    String              @default("trial")
   subscriptionExpires DateTime?
@@ -374,6 +376,11 @@ model CoachReview {
   ratingOverall      Float
   comment            String?
   isPublic           Boolean  @default(false)
+  /// Actual wall-clock time the review was submitted (always set on create).
+  ratedAt            DateTime @default(now())
+  /// True when timing analysis detected a suspicious review (submitted before session would end).
+  isFlagged          Boolean  @default(false)
+  flagReason         String?
   createdAt          DateTime @default(now())
 
   @@index([coachId])

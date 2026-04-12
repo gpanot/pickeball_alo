@@ -17,8 +17,9 @@ import { useCredits } from '@/context/CreditContext';
 import { DatePicker, SectionHeader } from '@/components/coach';
 import { PinIcon } from '@/components/Icons';
 import { formatVndFull, formatPrice, formatDateFriendly } from '@/lib/formatters';
-import { getAloboSlots } from '@/mobile/lib/api';
+import { getAloboSlots, getVenue } from '@/mobile/lib/api';
 import { spacing, fontSize, borderRadius } from '@/mobile/lib/theme';
+import type { VenueResult } from '@/mobile/lib/types';
 
 
 function haversineKm(lat1: number, lng1: number, lat2: number, lng2: number): number {
@@ -33,10 +34,88 @@ function haversineKm(lat1: number, lng1: number, lat2: number, lng2: number): nu
 const DURATIONS = ['1h', '1h30', '2h'] as const;
 const DURATION_MINUTES: Record<string, number> = { '1h': 60, '1h30': 90, '2h': 120 };
 
+interface AloboVenueSlots { supported: boolean; bookedKeys?: string[] }
+
+interface VenueAvailabilityState {
+  available: boolean;
+  pricePerHour: number | null;
+  totalPrice: number | null;
+  slotCount: number;
+}
+
 function addMinutes(t: string, mins: number): string {
   const [h, m] = t.split(':').map(Number);
   const total = h * 60 + m + mins;
   return `${String(Math.floor(total / 60) % 24).padStart(2, '0')}:${String(total % 60).padStart(2, '0')}`;
+}
+
+function parseHmToMinutes(value: string): number | null {
+  const m = value.match(/^(\d{1,2}):(\d{2})$/);
+  if (!m) return null;
+  const h = Number(m[1]);
+  const mm = Number(m[2]);
+  if (!Number.isFinite(h) || !Number.isFinite(mm)) return null;
+  return h * 60 + mm;
+}
+
+function detectStepMinutes(venue: VenueResult): 30 | 60 {
+  if (venue.use30MinSlots !== false) return 30;
+  for (const court of venue.courts) {
+    for (const slot of court.slots) {
+      if (slot.time.includes(':30')) return 30;
+    }
+  }
+  return 60;
+}
+
+function computeVenueAvailability(
+  venue: VenueResult | null,
+  blockedKeys: Set<string>,
+  selectedTime: string | null,
+  durationMins: number,
+): VenueAvailabilityState {
+  if (!venue || !venue.courts?.length || !selectedTime) {
+    return { available: false, pricePerHour: null, totalPrice: null, slotCount: 0 };
+  }
+
+  const startMinute = parseHmToMinutes(selectedTime);
+  if (startMinute == null) return { available: false, pricePerHour: null, totalPrice: null, slotCount: 0 };
+
+  const stepMinutes = detectStepMinutes(venue);
+  const runLen = Math.max(1, Math.round(durationMins / stepMinutes));
+  let best: { total: number; perHour: number } | null = null;
+
+  for (const court of venue.courts) {
+    const byMinute = new Map<number, { price: number; key: string }>();
+    for (const slot of court.slots) {
+      const minute = parseHmToMinutes(slot.time);
+      if (minute == null) continue;
+      const key = `${court.name}|${slot.time}`;
+      if (slot.isBooked || blockedKeys.has(key)) continue;
+      byMinute.set(minute, { price: slot.price, key });
+    }
+
+    let total = 0;
+    let ok = true;
+    for (let i = 0; i < runLen; i += 1) {
+      const slot = byMinute.get(startMinute + i * stepMinutes);
+      if (!slot) {
+        ok = false;
+        break;
+      }
+      total += slot.price;
+    }
+    if (!ok) continue;
+
+    const durationHours = durationMins / 60;
+    const perHour = durationHours > 0 ? Math.round(total / durationHours) : total;
+    if (!best || perHour < best.perHour || (perHour === best.perHour && total < best.total)) {
+      best = { total, perHour };
+    }
+  }
+
+  if (!best) return { available: false, pricePerHour: null, totalPrice: null, slotCount: runLen };
+  return { available: true, pricePerHour: best.perHour, totalPrice: best.total, slotCount: runLen };
 }
 
 function generateStartTimes(
@@ -79,8 +158,10 @@ export default function SessionBookingScreen() {
   const [selectedDuration, setSelectedDuration] = useState(0);
   const [selectedTime, setSelectedTime] = useState<string | null>(null);
   const [selectedVenueId, setSelectedVenueId] = useState<string | null>(null);
-  const [sessionType, setSessionType] = useState<'1on1' | 'group'>('1on1');
+  const [groupExtraPlayers, setGroupExtraPlayers] = useState(0);
   const [venueSlotPrices, setVenueSlotPrices] = useState<Record<string, number | null>>({});
+  const [venueDetails, setVenueDetails] = useState<Record<string, VenueResult>>({});
+  const [venueAloboBookedKeys, setVenueAloboBookedKeys] = useState<Record<string, Set<string>>>({});
 
   useEffect(() => {
     if (coachId) {
@@ -140,52 +221,93 @@ export default function SessionBookingScreen() {
     if (!selectedDate || courts.length === 0) return;
     const fetchPrices = async () => {
       const prices: Record<string, number | null> = {};
+      const venueById: Record<string, VenueResult> = {};
+      const bookedByVenue: Record<string, Set<string>> = {};
       for (const c of courts) {
         try {
-          const slots = await getAloboSlots(c.venueId, selectedDate);
+          const [venue, slots] = await Promise.all([
+            getVenue(c.venueId, selectedDate),
+            getAloboSlots(c.venueId, selectedDate) as Promise<AloboVenueSlots>,
+          ]);
+          venueById[c.venueId] = venue;
+          bookedByVenue[c.venueId] = slots.supported ? new Set(slots.bookedKeys ?? []) : new Set();
           if (__DEV__) {
             console.log('[session-booking] aloboSlots for', c.venueName, ':', JSON.stringify({
               supported: slots.supported,
-              courtCount: slots.courts?.length ?? 0,
-              samplePrices: slots.courts?.slice(0, 1).map((ct: { slots: { price: number }[] }) =>
-                ct.slots.slice(0, 3).map((s: { price: number }) => s.price),
-              ),
+              courtCount: venue.courts?.length ?? 0,
             }));
           }
-          if (slots.supported && slots.courts) {
-            const allPrices = slots.courts.flatMap((ct: { slots: { price: number }[] }) =>
-              ct.slots.map((s: { price: number }) => s.price),
-            );
-            prices[c.venueId] = allPrices.length > 0 ? Math.min(...allPrices) : c.venuePriceMin ?? null;
-          } else {
-            prices[c.venueId] = c.venuePriceMin ?? null;
-          }
+          const allPrices = venue.courts.flatMap((ct) => ct.slots.map((s) => s.price)).filter((p) => Number.isFinite(p));
+          prices[c.venueId] = allPrices.length > 0 ? Math.min(...allPrices) : (venue.priceMin ?? c.venuePriceMin ?? null);
         } catch {
           prices[c.venueId] = c.venuePriceMin ?? null;
+          bookedByVenue[c.venueId] = new Set();
         }
       }
       if (__DEV__) console.log('[session-booking] fetched prices:', prices);
       setVenueSlotPrices(prices);
+      setVenueDetails(venueById);
+      setVenueAloboBookedKeys(bookedByVenue);
     };
     fetchPrices();
   }, [selectedDate, courts]);
 
+  const sessionType: '1on1' | 'group' = groupExtraPlayers > 0 ? 'group' : '1on1';
+  const maxExtraPlayers = useMemo(() => Math.max(0, (coach?.maxGroupSize ?? 1) - 1), [coach]);
+  const venueAvailability = useMemo(() => {
+    const out: Record<string, VenueAvailabilityState> = {};
+    for (const c of courts) {
+      out[c.venueId] = computeVenueAvailability(
+        venueDetails[c.venueId] ?? null,
+        venueAloboBookedKeys[c.venueId] ?? new Set<string>(),
+        selectedTime,
+        durationMins,
+      );
+    }
+    return out;
+  }, [courts, venueDetails, venueAloboBookedKeys, selectedTime, durationMins]);
+
+  const hasAnyAvailableCourt = useMemo(
+    () => courts.length === 0 || courts.some((c) => venueAvailability[c.venueId]?.available),
+    [courts, venueAvailability],
+  );
+
+  useEffect(() => {
+    if (!selectedDate || !selectedTime || courts.length === 0) return;
+    const selectedAvailable = selectedVenueId ? venueAvailability[selectedVenueId]?.available : false;
+    if (selectedAvailable) return;
+    const firstAvailable = courts.find((c) => venueAvailability[c.venueId]?.available);
+    setSelectedVenueId(firstAvailable?.venueId ?? null);
+  }, [selectedDate, selectedTime, courts, selectedVenueId, venueAvailability]);
+
   const coachFee = useMemo(() => {
     if (!coach) return 0;
-    const hourlyRate = sessionType === '1on1' ? coach.hourlyRate1on1 : (coach.hourlyRateGroup ?? coach.hourlyRate1on1);
+    const extraPerHour = coach.hourlyRateGroup ?? coach.hourlyRate1on1;
+    const hourlyRate = coach.hourlyRate1on1 + (groupExtraPlayers * extraPerHour);
     return Math.round(hourlyRate * (durationMins / 60));
-  }, [coach, sessionType, durationMins]);
+  }, [coach, groupExtraPlayers, durationMins]);
 
   const courtFee = useMemo(() => {
     if (!selectedVenueId) return 0;
+    const exact = venueAvailability[selectedVenueId]?.totalPrice;
+    if (typeof exact === 'number' && Number.isFinite(exact) && exact > 0) return exact;
     const price = venueSlotPrices[selectedVenueId];
     if (price == null) return 0;
     return Math.round(price * (durationMins / 60));
-  }, [selectedVenueId, venueSlotPrices, durationMins]);
+  }, [selectedVenueId, venueAvailability, venueSlotPrices, durationMins]);
 
   const totalFee = coachFee + courtFee;
 
-  const canBook = selectedDate && selectedTime && (selectedVenueId || courts.length === 0) && coach && !bookingLoading;
+  const selectedVenueAvailable = selectedVenueId ? venueAvailability[selectedVenueId]?.available : courts.length === 0;
+  const canBook = Boolean(
+    selectedDate &&
+    selectedTime &&
+    (selectedVenueId || courts.length === 0) &&
+    selectedVenueAvailable &&
+    hasAnyAvailableCourt &&
+    coach &&
+    !bookingLoading,
+  );
 
   const onContinue = useCallback(async () => {
     if (!canBook || !coach || !selectedDate || !selectedTime) return;
@@ -205,6 +327,7 @@ export default function SessionBookingScreen() {
         startTime: selectedTime,
         endTime: addMinutes(selectedTime, durationMins),
         sessionType,
+        groupExtraPlayers,
         userId,
         userName,
         userPhone,
@@ -225,7 +348,7 @@ export default function SessionBookingScreen() {
     } catch (e) {
       Alert.alert('Booking Failed', e instanceof Error ? e.message : 'Please try again');
     }
-  }, [canBook, coach, selectedVenueId, selectedDate, selectedTime, durationMins, sessionType, credit, bookSession, userId, userName, userPhone, router]);
+  }, [canBook, coach, selectedVenueId, selectedDate, selectedTime, durationMins, sessionType, groupExtraPlayers, credit, bookSession, userId, userName, userPhone, router]);
 
   const chip = useCallback(
     (active: boolean) => ({
@@ -325,23 +448,32 @@ export default function SessionBookingScreen() {
         {selectedDate && selectedTime && courts.length > 0 && (
           <View style={styles.sectionWrap}>
             <SectionHeader title="Available Court" theme={t} />
+            {!hasAnyAvailableCourt && (
+              <Text style={[styles.noSlots, { color: t.textMuted }]}>
+                No courts have open slots at this time. Try another time.
+              </Text>
+            )}
             <View style={{ gap: spacing.sm }}>
               {courts.map((court) => {
                 const active = selectedVenueId === court.venueId;
+                const availability = venueAvailability[court.venueId];
+                const isAvailable = availability?.available ?? false;
                 const dist = mapUserLoc && court.venueLat && court.venueLng
                   ? haversineKm(mapUserLoc.lat, mapUserLoc.lng, court.venueLat, court.venueLng)
                   : null;
-                const slotPrice = venueSlotPrices[court.venueId] ?? court.venuePriceMin;
+                const slotPrice = availability?.pricePerHour ?? venueSlotPrices[court.venueId] ?? court.venuePriceMin;
                 const courtCount = court.venueCourtCount ?? 0;
                 return (
                   <Pressable
                     key={court.id}
+                    disabled={!isAvailable}
                     onPress={() => setSelectedVenueId(court.venueId)}
                     style={[
                       styles.courtCard,
                       {
-                        backgroundColor: active ? t.accentBgStrong : t.bgCard,
-                        borderColor: active ? t.accent : t.border,
+                        backgroundColor: !isAvailable ? t.bg : active ? t.accentBgStrong : t.bgCard,
+                        borderColor: !isAvailable ? t.border : active ? t.accent : t.border,
+                        opacity: isAvailable ? 1 : 0.55,
                       },
                     ]}
                   >
@@ -369,6 +501,16 @@ export default function SessionBookingScreen() {
                           </Text>
                         </View>
                       )}
+                      <View
+                        style={[
+                          styles.courtChip,
+                          { backgroundColor: isAvailable ? t.accentBg : t.bgCard, borderWidth: 1, borderColor: isAvailable ? t.accent : t.border },
+                        ]}
+                      >
+                        <Text style={[styles.courtChipText, { color: isAvailable ? t.accent : t.textMuted }]}>
+                          {isAvailable ? 'Slot available' : 'No slot'}
+                        </Text>
+                      </View>
                       {slotPrice != null && slotPrice > 0 && (
                         <View style={[styles.courtChip, { backgroundColor: t.accentBg }]}>
                           <Text style={[styles.courtChipText, { color: t.accent }]}>
@@ -397,18 +539,18 @@ export default function SessionBookingScreen() {
             <SectionHeader title="Session Type" theme={t} />
             <View style={styles.typeRow}>
               <Pressable
-                onPress={() => setSessionType('1on1')}
+                onPress={() => setGroupExtraPlayers(0)}
                 style={[
                   styles.typeCard,
                   {
-                    backgroundColor: sessionType === '1on1' ? t.accentBgStrong : t.bgCard,
-                    borderColor: sessionType === '1on1' ? t.accent : t.border,
+                    backgroundColor: groupExtraPlayers === 0 ? t.accentBgStrong : t.bgCard,
+                    borderColor: groupExtraPlayers === 0 ? t.accent : t.border,
                   },
                 ]}
               >
                 <View style={styles.typeRadio}>
-                  <View style={[styles.radioOuter, { borderColor: sessionType === '1on1' ? t.accent : t.textMuted }]}>
-                    {sessionType === '1on1' && <View style={[styles.radioInner, { backgroundColor: t.accent }]} />}
+                  <View style={[styles.radioOuter, { borderColor: groupExtraPlayers === 0 ? t.accent : t.textMuted }]}>
+                    {groupExtraPlayers === 0 && <View style={[styles.radioInner, { backgroundColor: t.accent }]} />}
                   </View>
                   <Text style={[styles.typeLabel, { color: t.text }]}>1-on-1</Text>
                 </View>
@@ -419,20 +561,22 @@ export default function SessionBookingScreen() {
 
               {coach?.hourlyRateGroup != null && (
                 <Pressable
-                  onPress={() => setSessionType('group')}
+                  onPress={() => setGroupExtraPlayers((prev) => Math.min(maxExtraPlayers, Math.max(1, prev + 1)))}
                   style={[
                     styles.typeCard,
                     {
-                      backgroundColor: sessionType === 'group' ? t.accentBgStrong : t.bgCard,
-                      borderColor: sessionType === 'group' ? t.accent : t.border,
+                      backgroundColor: groupExtraPlayers > 0 ? t.accentBgStrong : t.bgCard,
+                      borderColor: groupExtraPlayers > 0 ? t.accent : t.border,
                     },
                   ]}
                 >
                   <View style={styles.typeRadio}>
-                    <View style={[styles.radioOuter, { borderColor: sessionType === 'group' ? t.accent : t.textMuted }]}>
-                      {sessionType === 'group' && <View style={[styles.radioInner, { backgroundColor: t.accent }]} />}
+                    <View style={[styles.radioOuter, { borderColor: groupExtraPlayers > 0 ? t.accent : t.textMuted }]}>
+                      {groupExtraPlayers > 0 && <View style={[styles.radioInner, { backgroundColor: t.accent }]} />}
                     </View>
-                    <Text style={[styles.typeLabel, { color: t.text }]}>Group</Text>
+                    <Text style={[styles.typeLabel, { color: t.text }]}>
+                      {groupExtraPlayers > 0 ? `Group +${groupExtraPlayers}` : 'Group'}
+                    </Text>
                   </View>
                   <Text style={[styles.typePrice, { color: t.accent }]}>
                     {formatVndFull(coach.hourlyRateGroup)}/p/h
@@ -440,6 +584,11 @@ export default function SessionBookingScreen() {
                 </Pressable>
               )}
             </View>
+            {coach?.hourlyRateGroup != null && (
+              <Text style={[styles.groupHint, { color: t.textMuted }]}>
+                Tap Group to add players ({groupExtraPlayers}/{maxExtraPlayers}).
+              </Text>
+            )}
           </View>
         )}
 
@@ -460,6 +609,12 @@ export default function SessionBookingScreen() {
             <View style={styles.summaryRow}>
               <Text style={[styles.summaryLabel, { color: t.textSec }]}>Duration</Text>
               <Text style={[styles.summaryValue, { color: t.text }]}>{DURATIONS[selectedDuration]}</Text>
+            </View>
+            <View style={styles.summaryRow}>
+              <Text style={[styles.summaryLabel, { color: t.textSec }]}>Session</Text>
+              <Text style={[styles.summaryValue, { color: t.text }]}>
+                {groupExtraPlayers > 0 ? `Group +${groupExtraPlayers}` : '1-on-1'}
+              </Text>
             </View>
             <View style={styles.summaryRow}>
               <Text style={[styles.summaryLabel, { color: t.textSec }]}>Coach fee</Text>
@@ -579,6 +734,7 @@ const styles = StyleSheet.create({
   radioInner: { width: 10, height: 10, borderRadius: 5 },
   typeLabel: { fontSize: fontSize.md, fontWeight: '700' },
   typePrice: { fontSize: fontSize.sm, fontWeight: '700' },
+  groupHint: { marginTop: spacing.sm, fontSize: fontSize.sm },
 
   summaryCard: { borderRadius: borderRadius.md, borderWidth: 1, padding: spacing.lg },
   summaryRow: { flexDirection: 'row', justifyContent: 'space-between', paddingVertical: spacing.sm },

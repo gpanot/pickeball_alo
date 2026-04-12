@@ -7,6 +7,7 @@ import {
   ActivityIndicator,
   Platform,
   FlatList,
+  ScrollView,
   type NativeSyntheticEvent,
   type NativeScrollEvent,
   useWindowDimensions,
@@ -16,8 +17,9 @@ import * as Location from 'expo-location';
 import BookScreenTopBar from '@/components/search/BookScreenTopBar';
 import MapsExploreSearch from '@/components/maps/MapsExploreSearch';
 import ResultsSearchTopBar from '@/components/search/ResultsSearchTopBar';
+import ScreenTopBar from '@/components/ui/ScreenTopBar';
 import VenueCard from '@/components/venue/VenueCard';
-import { LocateIcon } from '@/components/Icons';
+import { BackIcon, ListIcon, LocateIcon, MapIcon } from '@/components/Icons';
 import { formatPrice, mapPriceTierFromVnd, type MapPriceTier } from '@/lib/formatters';
 import type { CourtMapMapScreenProps } from '@/components/screens/CourtMapMapScreen.props';
 import type { VenueResult } from '@/lib/types';
@@ -217,6 +219,8 @@ export default function CourtMapMapScreen({
   onBookMapToggle,
   catalogVenueCount,
   exploreMapFetch,
+  bookHomeSimpleBack = false,
+  focusUserOnMount = false,
   initialUserLoc,
   onUserLocResolved,
   geoInitDone,
@@ -243,6 +247,7 @@ export default function CourtMapMapScreen({
   const exploreViewportEnabledRef = useRef(false);
   const regionDebounceRef = useRef<ReturnType<typeof setTimeout> | null>(null);
   const suppressViewportFetchUntilRef = useRef(0);
+  const lastViewportFetchRef = useRef<{ lat: number; lng: number; radiusKm: number; atMs: number } | null>(null);
   const sortedVenuesRef = useRef<VenueResult[]>([]);
   const scrollCarouselToIdRef = useRef<string | null>(null);
 
@@ -253,8 +258,13 @@ export default function CourtMapMapScreen({
   const [selectedVenueId, setSelectedVenueId] = useState<string | null>(null);
   const [userLoc, setUserLoc] = useState<{ lat: number; lng: number } | null>(initialUserLoc ?? null);
   const [geoWorking, setGeoWorking] = useState(false);
+  const [pinToast, setPinToast] = useState<string | null>(null);
+  const [finderView, setFinderView] = useState<'map' | 'list'>('map');
+  const [finderListFilter, setFinderListFilter] = useState<'all' | 'pinned'>('all');
   const preferUserCenterRef = useRef(false);
   const venuesSigRef = useRef('');
+  const focusedUserOnMountRef = useRef(false);
+  const pinToastTimerRef = useRef<ReturnType<typeof setTimeout> | null>(null);
 
   const sortOrigin = useMemo(
     () => userLoc ?? { lat: HCMC.latitude, lng: HCMC.longitude },
@@ -274,6 +284,29 @@ export default function CourtMapMapScreen({
     () => sortedVenues.find((v) => v.id === selectedVenueId) ?? null,
     [sortedVenues, selectedVenueId],
   );
+
+  const listVenues = useMemo(() => {
+    const source = finderListFilter === 'pinned'
+      ? venues.filter((v) => savedIds.has(v.id))
+      : venues;
+    if (sortBy === 'price') {
+      return [...source].sort((a, b) => (a.priceMin ?? Infinity) - (b.priceMin ?? Infinity));
+    }
+    if (sortBy === 'rating') {
+      return [...source].sort((a, b) => (b.rating ?? 0) - (a.rating ?? 0));
+    }
+    return [...source].sort(
+      (a, b) =>
+        haversineKm(sortOrigin, { lat: a.lat, lng: a.lng }) -
+        haversineKm(sortOrigin, { lat: b.lat, lng: b.lng }),
+    );
+  }, [venues, savedIds, sortBy, sortOrigin, finderListFilter]);
+
+  useEffect(() => {
+    if (finderListFilter === 'pinned' && savedIds.size === 0) {
+      setFinderListFilter('all');
+    }
+  }, [finderListFilter, savedIds]);
 
   const showMapCarousel =
     bookHomeTopBar && sortedVenues.length > 0 && selectedVenueId != null && !mapCarouselDismissed;
@@ -395,6 +428,12 @@ export default function CourtMapMapScreen({
   }, [applyUserView, onUserLocResolved, bookHomeTopBar]);
 
   useEffect(() => {
+    if (!focusUserOnMount || focusedUserOnMountRef.current) return;
+    focusedUserOnMountRef.current = true;
+    void recenterOnUser();
+  }, [focusUserOnMount, recenterOnUser]);
+
+  useEffect(() => {
     if (geoInitDone) return;
     let cancelled = false;
     void (async () => {
@@ -467,9 +506,20 @@ export default function CourtMapMapScreen({
   useEffect(
     () => () => {
       if (regionDebounceRef.current) clearTimeout(regionDebounceRef.current);
+      if (pinToastTimerRef.current) clearTimeout(pinToastTimerRef.current);
     },
     [],
   );
+
+  const toggleSavedWithToast = useCallback((venue: VenueResult) => {
+    const wasSaved = savedIds.has(venue.id);
+    onToggleSaved(venue.id);
+    if (!wasSaved) {
+      setPinToast(`Venue ${venue.name} pinned!`);
+      if (pinToastTimerRef.current) clearTimeout(pinToastTimerRef.current);
+      pinToastTimerRef.current = setTimeout(() => setPinToast(null), 1400);
+    }
+  }, [onToggleSaved, savedIds]);
 
   const onMapReady = useCallback(() => {
     const now = typeof performance !== 'undefined' ? performance.now() : Date.now();
@@ -483,6 +533,31 @@ export default function CourtMapMapScreen({
       if (regionDebounceRef.current) clearTimeout(regionDebounceRef.current);
       regionDebounceRef.current = setTimeout(() => {
         const radiusKm = radiusKmFromVisibleRegion(region);
+        const nowMs = Date.now();
+        const prev = lastViewportFetchRef.current;
+        if (prev) {
+          const movedKm = haversineKm(
+            { lat: prev.lat, lng: prev.lng },
+            { lat: region.latitude, lng: region.longitude },
+          );
+          const radiusDelta = Math.abs(prev.radiusKm - radiusKm);
+          const elapsedMs = nowMs - prev.atMs;
+          // Ignore tiny/noisy region settles to avoid fetch loops while idle.
+          if (movedKm < 0.25 && radiusDelta < 1 && elapsedMs < 2500) {
+            mapDebug('viewport_fetch_skip_stable_region', {
+              movedKm: Number(movedKm.toFixed(3)),
+              radiusDelta: Number(radiusDelta.toFixed(2)),
+              elapsedMs,
+            });
+            return;
+          }
+        }
+        lastViewportFetchRef.current = {
+          lat: region.latitude,
+          lng: region.longitude,
+          radiusKm,
+          atMs: nowMs,
+        };
         exploreMapFetch({
           lat: region.latitude,
           lng: region.longitude,
@@ -498,10 +573,12 @@ export default function CourtMapMapScreen({
     const sig = venues.map((v) => v.id).join('\0');
     if (sig === venuesSigRef.current) return;
     venuesSigRef.current = sig;
-    if (venues.length > 0 && !preferUserCenterRef.current) {
+    // In Book map viewport mode, auto-fitting causes region-change fetch loops.
+    // Keep current viewport stable and only auto-fit in non-viewport flows.
+    if (venues.length > 0 && !preferUserCenterRef.current && !bookHomeTopBar) {
       fitVenues();
     }
-  }, [venues, fitVenues]);
+  }, [venues, fitVenues, bookHomeTopBar]);
 
   const cardBottom = 8;
   const locateBottom =
@@ -547,15 +624,156 @@ export default function CourtMapMapScreen({
     <View style={[styles.root, { backgroundColor: t.bg }]}>
       {bookHomeTopBar ? (
         <>
-          <BookScreenTopBar variant="map" catalogVenueCount={catalogVenueCount} t={t} />
+          {bookHomeSimpleBack ? (
+            <ScreenTopBar t={t} zIndex={60}>
+              <Pressable
+                onPress={onBack}
+                style={{ flexDirection: 'row', alignItems: 'center', gap: 8, alignSelf: 'flex-start' }}
+              >
+                <BackIcon color={t.text} />
+                <Text style={{ color: t.text, fontWeight: '700', fontSize: 16 }}>Back</Text>
+              </Pressable>
+            </ScreenTopBar>
+          ) : (
+            <BookScreenTopBar variant="map" catalogVenueCount={catalogVenueCount} t={t} />
+          )}
           <MapsExploreSearch
             venues={venues}
             t={t}
             onPickVenue={focusVenueFromExplore}
             onPickPlace={focusPlaceFromExplore}
-            bookMapToggleLabel={bookMapToggleLabel}
-            onBookMapToggle={onBookMapToggle}
+            bookMapToggleLabel={bookHomeSimpleBack ? undefined : bookMapToggleLabel}
+            onBookMapToggle={bookHomeSimpleBack ? undefined : onBookMapToggle}
           />
+          {bookHomeSimpleBack ? (
+            <>
+              <View style={[styles.finderToggleRow, { borderBottomColor: t.border, backgroundColor: t.bg }]}>
+                <Pressable
+                  onPress={() => setFinderView('list')}
+                  style={[
+                    styles.finderToggleBtn,
+                    {
+                      backgroundColor: finderView === 'list' ? 'transparent' : t.bgCard,
+                      borderColor: finderView === 'list' ? t.accent : t.border,
+                    },
+                  ]}
+                >
+                  <ListIcon size={16} color={finderView === 'list' ? t.accent : t.textSec} />
+                  <Text
+                    style={{
+                      color: finderView === 'list' ? t.accent : t.textSec,
+                      fontWeight: '700',
+                      fontSize: 14,
+                    }}
+                  >
+                    List
+                  </Text>
+                </Pressable>
+                <Pressable
+                  onPress={() => setFinderView('map')}
+                  style={[
+                    styles.finderToggleBtn,
+                    {
+                      backgroundColor: finderView === 'map' ? 'transparent' : t.bgCard,
+                      borderColor: finderView === 'map' ? t.accent : t.border,
+                    },
+                  ]}
+                >
+                  <MapIcon size={16} color={finderView === 'map' ? t.accent : t.textSec} />
+                  <Text
+                    style={{
+                      color: finderView === 'map' ? t.accent : t.textSec,
+                      fontWeight: '700',
+                      fontSize: 14,
+                    }}
+                  >
+                    Map
+                  </Text>
+                </Pressable>
+              </View>
+              {finderView === 'list' ? (
+                <View style={[styles.finderFiltersWrap, { borderBottomColor: t.border, backgroundColor: t.bg }]}>
+                  <ScrollView
+                    horizontal
+                    showsHorizontalScrollIndicator={false}
+                    contentContainerStyle={styles.finderFiltersRow}
+                  >
+                    <Pressable
+                      onPress={() => setFinderListFilter('pinned')}
+                      disabled={savedIds.size === 0}
+                      style={[
+                        styles.finderFilterChip,
+                        {
+                          backgroundColor: finderListFilter === 'pinned' ? t.accentBgStrong : t.bgCard,
+                          borderColor: finderListFilter === 'pinned' ? t.accent : t.border,
+                          opacity: savedIds.size === 0 ? 0.45 : 1,
+                        },
+                      ]}
+                    >
+                      <Text
+                        style={{
+                          color: finderListFilter === 'pinned' ? t.accent : t.textSec,
+                          fontWeight: '600',
+                          fontSize: 12,
+                        }}
+                      >
+                        Pinned
+                      </Text>
+                    </Pressable>
+                    <Pressable
+                      onPress={() => setFinderListFilter('all')}
+                      style={[
+                        styles.finderFilterChip,
+                        {
+                          backgroundColor: finderListFilter === 'all' ? t.accentBgStrong : t.bgCard,
+                          borderColor: finderListFilter === 'all' ? t.accent : t.border,
+                        },
+                      ]}
+                    >
+                      <Text
+                        style={{
+                          color: finderListFilter === 'all' ? t.accent : t.textSec,
+                          fontWeight: '600',
+                          fontSize: 12,
+                        }}
+                      >
+                        All
+                      </Text>
+                    </Pressable>
+                    {(
+                      [
+                        ['distance', 'Nearest'],
+                        ['price', 'Cheapest'],
+                        ['rating', 'Top rated'],
+                      ] as const
+                    ).map(([key, label]) => (
+                      <Pressable
+                        key={key}
+                        onPress={() => onSort(key)}
+                        style={[
+                          styles.finderFilterChip,
+                          {
+                            backgroundColor: sortBy === key ? t.accentBgStrong : t.bgCard,
+                            borderColor: sortBy === key ? t.accent : t.border,
+                          },
+                        ]}
+                      >
+                        <Text
+                          style={{
+                            color: sortBy === key ? t.accent : t.textSec,
+                            fontWeight: '600',
+                            fontSize: 12,
+                          }}
+                        >
+                          {label}
+                        </Text>
+                      </Pressable>
+                    ))}
+                  </ScrollView>
+                </View>
+              ) : null}
+            </>
+          ) : null}
         </>
       ) : (
         <ResultsSearchTopBar
@@ -578,97 +796,133 @@ export default function CourtMapMapScreen({
         />
       )}
       <View style={styles.mapWrap}>
-        <MapView
-          ref={mapRef}
-          style={StyleSheet.absoluteFill}
-          initialRegion={initialRegion}
-          mapType={Platform.OS === 'android' ? 'none' : 'standard'}
-          loadingBackgroundColor="#0e0e0e"
-          moveOnMarkerPress={false}
-          onMapReady={onMapReady}
-          onRegionChangeComplete={bookHomeTopBar && exploreMapFetch ? onRegionChangeComplete : undefined}
-          onMarkerPress={onMarkerPress}
-          onPress={dismissCard}
-          poiClickEnabled={false}
-          showsUserLocation={false}
-          showsMyLocationButton={false}
-        >
-          <UrlTile
-            urlTemplate={CARTO_DARK_ALL_TILE_URL}
-            maximumZ={19}
-            flipY={false}
-            shouldReplaceMapContent={Platform.OS === 'ios'}
-            {...(mapTileCachePath ? { tileCachePath: mapTileCachePath } : {})}
+        {bookHomeSimpleBack && finderView === 'list' ? (
+          <FlatList
+            data={listVenues}
+            keyExtractor={(v) => v.id}
+            contentContainerStyle={{ paddingHorizontal: 12, paddingVertical: 10, paddingBottom: 28 }}
+            ItemSeparatorComponent={() => <View style={{ height: 8 }} />}
+            renderItem={({ item }) => (
+              <VenueCard
+                venue={item}
+                compact
+                isSaved={savedIds.has(item.id)}
+                onToggleSaved={() => toggleSavedWithToast(item)}
+                onPress={() => onOpenVenue(item)}
+                t={t}
+              />
+            )}
+            ListEmptyComponent={
+              <View style={{ alignItems: 'center', paddingVertical: 36, paddingHorizontal: 20 }}>
+                <Text style={{ fontSize: 34, marginBottom: 10 }}>🔎</Text>
+                <Text style={{ color: t.textSec, textAlign: 'center' }}>
+                  No venues in this area yet. Try searching a different place.
+                </Text>
+              </View>
+            }
           />
-          {markers}
-          {userLoc ? <MapUserMarker lat={userLoc.lat} lng={userLoc.lng} trackChanges={globalTrack} /> : null}
-        </MapView>
+        ) : (
+          <>
+            <MapView
+              ref={mapRef}
+              style={StyleSheet.absoluteFill}
+              initialRegion={initialRegion}
+              mapType={Platform.OS === 'android' ? 'none' : 'standard'}
+              loadingBackgroundColor="#0e0e0e"
+              moveOnMarkerPress={false}
+              onMapReady={onMapReady}
+              onRegionChangeComplete={bookHomeTopBar && exploreMapFetch ? onRegionChangeComplete : undefined}
+              onMarkerPress={onMarkerPress}
+              onPress={dismissCard}
+              poiClickEnabled={false}
+              showsUserLocation={false}
+              showsMyLocationButton={false}
+            >
+              <UrlTile
+                urlTemplate={CARTO_DARK_ALL_TILE_URL}
+                maximumZ={19}
+                flipY={false}
+                shouldReplaceMapContent={Platform.OS === 'ios'}
+                {...(mapTileCachePath ? { tileCachePath: mapTileCachePath } : {})}
+              />
+              {markers}
+              {userLoc ? <MapUserMarker lat={userLoc.lat} lng={userLoc.lng} trackChanges={globalTrack} /> : null}
+            </MapView>
 
-        <Pressable
-          accessibilityLabel="Re-center map on your location"
-          disabled={geoWorking}
-          onPress={recenterOnUser}
-          style={[
-            styles.locateBtn,
-            {
-              bottom: locateBottom,
-              borderColor: '#3f3f46',
-              backgroundColor: '#262626',
-            },
-          ]}
-        >
-          {geoWorking ? <ActivityIndicator /> : <LocateIcon size={22} color="#f4f4f5" />}
-        </Pressable>
+            <Pressable
+              accessibilityLabel="Re-center map on your location"
+              disabled={geoWorking}
+              onPress={recenterOnUser}
+              style={[
+                styles.locateBtn,
+                {
+                  bottom: locateBottom,
+                  borderColor: '#3f3f46',
+                  backgroundColor: '#262626',
+                },
+              ]}
+            >
+              {geoWorking ? <ActivityIndicator /> : <LocateIcon size={22} color="#f4f4f5" />}
+            </Pressable>
 
-        {showMapCarousel ? (
-          <View style={[styles.cardOverlay, { bottom: cardBottom }]} pointerEvents="box-none">
-            <FlatList
-              ref={carouselListRef}
-              data={sortedVenues}
-              keyExtractor={(v) => v.id}
-              horizontal
-              showsHorizontalScrollIndicator={false}
-              decelerationRate="fast"
-              snapToInterval={carouselSnapStride}
-              snapToAlignment="start"
-              disableIntervalMomentum
-              contentContainerStyle={{
-                paddingLeft: CAROUSEL_LEADING,
-                paddingRight: CAROUSEL_TRAILING_PEEK,
-                paddingVertical: 4,
-              }}
-              ItemSeparatorComponent={() => <View style={{ width: carouselItemGap }} />}
-              getItemLayout={(_, index) => ({
-                length: carouselSnapStride,
-                offset: carouselSnapStride * index,
-                index,
-              })}
-              onMomentumScrollEnd={onCarouselMomentumScrollEnd}
-              renderItem={({ item }) => (
-                <View style={{ width: carouselCardWidth }}>
+            {showMapCarousel ? (
+              <View style={[styles.cardOverlay, { bottom: cardBottom }]} pointerEvents="box-none">
+                <FlatList
+                  ref={carouselListRef}
+                  data={sortedVenues}
+                  keyExtractor={(v) => v.id}
+                  horizontal
+                  showsHorizontalScrollIndicator={false}
+                  decelerationRate="fast"
+                  snapToInterval={carouselSnapStride}
+                  snapToAlignment="start"
+                  disableIntervalMomentum
+                  contentContainerStyle={{
+                    paddingLeft: CAROUSEL_LEADING,
+                    paddingRight: CAROUSEL_TRAILING_PEEK,
+                    paddingVertical: 4,
+                  }}
+                  ItemSeparatorComponent={() => <View style={{ width: carouselItemGap }} />}
+                  getItemLayout={(_, index) => ({
+                    length: carouselSnapStride,
+                    offset: carouselSnapStride * index,
+                    index,
+                  })}
+                  onMomentumScrollEnd={onCarouselMomentumScrollEnd}
+                  renderItem={({ item }) => (
+                    <View style={{ width: carouselCardWidth }}>
+                      <VenueCard
+                        venue={item}
+                        compact
+                        isSaved={savedIds.has(item.id)}
+                        onToggleSaved={() => toggleSavedWithToast(item)}
+                        onPress={() => onOpenVenue(item)}
+                        t={t}
+                      />
+                    </View>
+                  )}
+                />
+              </View>
+            ) : !bookHomeTopBar && selectedVenue ? (
+              <View style={[styles.cardOverlay, { bottom: cardBottom }]} pointerEvents="box-none">
+                <View onStartShouldSetResponder={() => true}>
                   <VenueCard
-                    venue={item}
+                    venue={selectedVenue}
                     compact
-                    isSaved={savedIds.has(item.id)}
-                    onToggleSaved={onToggleSaved}
-                    onPress={() => onOpenVenue(item)}
+                    isSaved={savedIds.has(selectedVenue.id)}
+                    onToggleSaved={() => toggleSavedWithToast(selectedVenue)}
+                    onPress={() => onOpenVenue(selectedVenue)}
                     t={t}
                   />
                 </View>
-              )}
-            />
-          </View>
-        ) : !bookHomeTopBar && selectedVenue ? (
-          <View style={[styles.cardOverlay, { bottom: cardBottom }]} pointerEvents="box-none">
-            <View onStartShouldSetResponder={() => true}>
-              <VenueCard
-                venue={selectedVenue}
-                compact
-                isSaved={savedIds.has(selectedVenue.id)}
-                onToggleSaved={onToggleSaved}
-                onPress={() => onOpenVenue(selectedVenue)}
-                t={t}
-              />
+              </View>
+            ) : null}
+          </>
+        )}
+        {pinToast ? (
+          <View style={styles.pinToastWrap} pointerEvents="none">
+            <View style={[styles.pinToast, { backgroundColor: '#22c55e' }]}>
+              <Text style={styles.pinToastText}>{pinToast}</Text>
             </View>
           </View>
         ) : null}
@@ -680,6 +934,43 @@ export default function CourtMapMapScreen({
 const styles = StyleSheet.create({
   root: { flex: 1 },
   mapWrap: { flex: 1, position: 'relative' },
+  finderToggleRow: {
+    flexDirection: 'row',
+    gap: 8,
+    paddingHorizontal: 16,
+    paddingBottom: 10,
+    borderBottomWidth: 1,
+  },
+  finderToggleBtn: {
+    flex: 1,
+    flexDirection: 'row',
+    alignItems: 'center',
+    justifyContent: 'center',
+    gap: 8,
+    paddingVertical: 10,
+    borderRadius: 12,
+    borderWidth: 1.5,
+  },
+  finderFiltersRow: {
+    flexDirection: 'row',
+    alignItems: 'center',
+    gap: 8,
+    paddingHorizontal: 2,
+    paddingVertical: 2,
+  },
+  finderFiltersWrap: {
+    paddingHorizontal: 14,
+    paddingVertical: 6,
+    borderBottomWidth: 1,
+  },
+  finderFilterChip: {
+    paddingVertical: 5,
+    paddingHorizontal: 14,
+    borderRadius: 20,
+    borderWidth: 1,
+    minHeight: 30,
+    justifyContent: 'center',
+  },
   pinOuter: {
     width: 34,
     height: 34,
@@ -740,5 +1031,24 @@ const styles = StyleSheet.create({
     left: 0,
     right: 0,
     zIndex: 5100,
+  },
+  pinToastWrap: {
+    position: 'absolute',
+    left: 0,
+    right: 0,
+    top: 10,
+    alignItems: 'center',
+    zIndex: 5200,
+  },
+  pinToast: {
+    borderRadius: 999,
+    paddingVertical: 8,
+    paddingHorizontal: 14,
+    maxWidth: '90%',
+  },
+  pinToastText: {
+    color: '#04130a',
+    fontWeight: '800',
+    fontSize: 12,
   },
 });

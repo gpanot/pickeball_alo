@@ -24,6 +24,7 @@ interface SessionState {
     startTime: string;
     endTime: string;
     sessionType: '1on1' | 'group';
+    groupExtraPlayers?: number;
     userId: string;
     userName: string;
     userPhone: string;

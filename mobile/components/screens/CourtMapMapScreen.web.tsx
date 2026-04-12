@@ -2,16 +2,18 @@
  * Web: react-native-maps is native-only. Provide the same chrome + a scrollable venue list
  * so Expo web bundles without MapMarkerNativeComponent errors.
  */
-import React, { useCallback, useState } from 'react';
+import React, { useCallback, useEffect, useRef, useState } from 'react';
 import { View, Text, Pressable, StyleSheet, ScrollView } from 'react-native';
 import BookScreenTopBar from '@/components/search/BookScreenTopBar';
 import MapsExploreSearch from '@/components/maps/MapsExploreSearch';
 import ResultsSearchTopBar from '@/components/search/ResultsSearchTopBar';
+import ScreenTopBar from '@/components/ui/ScreenTopBar';
 import VenueCard from '@/components/venue/VenueCard';
 import type { CourtMapMapScreenProps } from '@/components/screens/CourtMapMapScreen.props';
 import type { ThemeTokens } from '@/lib/theme';
 import type { VenueResult } from '@/lib/types';
 import { formatPrice, mapPriceTierFromVnd } from '@/lib/formatters';
+import { BackIcon } from '@/components/Icons';
 
 function WebVenueRow({
   venue,
@@ -93,9 +95,13 @@ export default function CourtMapMapScreen({
   bookMapToggleLabel,
   onBookMapToggle,
   catalogVenueCount,
+  bookHomeSimpleBack = false,
+  focusUserOnMount: _focusUserOnMount = false,
   exploreMapFetch: _exploreMapFetch,
 }: CourtMapMapScreenProps) {
   const [selectedVenue, setSelectedVenue] = useState<VenueResult | null>(null);
+  const [pinToast, setPinToast] = useState<string | null>(null);
+  const pinToastTimerRef = useRef<ReturnType<typeof setTimeout> | null>(null);
   const cardBottom = hasFlowPills ? 108 : 78;
 
   const focusVenueFromExplore = useCallback((v: VenueResult) => {
@@ -106,18 +112,46 @@ export default function CourtMapMapScreen({
     setSelectedVenue(null);
   }, []);
 
+  const toggleSavedWithToast = useCallback((venue: VenueResult) => {
+    const wasSaved = savedIds.has(venue.id);
+    onToggleSaved(venue.id);
+    if (!wasSaved) {
+      setPinToast(`Venue ${venue.name} pinned!`);
+      if (pinToastTimerRef.current) clearTimeout(pinToastTimerRef.current);
+      pinToastTimerRef.current = setTimeout(() => setPinToast(null), 1400);
+    }
+  }, [onToggleSaved, savedIds]);
+
+  useEffect(() => {
+    return () => {
+      if (pinToastTimerRef.current) clearTimeout(pinToastTimerRef.current);
+    };
+  }, []);
+
   return (
     <View style={[styles.root, { backgroundColor: t.bg }]}>
       {bookHomeTopBar ? (
         <>
-          <BookScreenTopBar variant="map" catalogVenueCount={catalogVenueCount} t={t} />
+          {bookHomeSimpleBack ? (
+            <ScreenTopBar t={t} zIndex={60}>
+              <Pressable
+                onPress={onBack}
+                style={{ flexDirection: 'row', alignItems: 'center', gap: 8, alignSelf: 'flex-start' }}
+              >
+                <BackIcon color={t.text} />
+                <Text style={{ color: t.text, fontWeight: '700', fontSize: 16 }}>Back</Text>
+              </Pressable>
+            </ScreenTopBar>
+          ) : (
+            <BookScreenTopBar variant="map" catalogVenueCount={catalogVenueCount} t={t} />
+          )}
           <MapsExploreSearch
             venues={venues}
             t={t}
             onPickVenue={focusVenueFromExplore}
             onPickPlace={focusPlaceFromExplore}
-            bookMapToggleLabel={bookMapToggleLabel}
-            onBookMapToggle={onBookMapToggle}
+            bookMapToggleLabel={bookHomeSimpleBack ? undefined : bookMapToggleLabel}
+            onBookMapToggle={bookHomeSimpleBack ? undefined : onBookMapToggle}
           />
         </>
       ) : (
@@ -165,10 +199,17 @@ export default function CourtMapMapScreen({
             venue={selectedVenue}
             compact
             isSaved={savedIds.has(selectedVenue.id)}
-            onToggleSaved={onToggleSaved}
+            onToggleSaved={() => toggleSavedWithToast(selectedVenue)}
             onPress={() => onOpenVenue(selectedVenue)}
             t={t}
           />
+        </View>
+      ) : null}
+      {pinToast ? (
+        <View style={styles.pinToastWrap} pointerEvents="none">
+          <View style={[styles.pinToast, { backgroundColor: '#22c55e' }]}>
+            <Text style={styles.pinToastText}>{pinToast}</Text>
+          </View>
         </View>
       ) : null}
     </View>
@@ -207,5 +248,24 @@ const styles = StyleSheet.create({
     left: 12,
     right: 12,
     zIndex: 5100,
+  },
+  pinToastWrap: {
+    position: 'absolute',
+    left: 0,
+    right: 0,
+    top: 10,
+    alignItems: 'center',
+    zIndex: 5200,
+  },
+  pinToast: {
+    borderRadius: 999,
+    paddingVertical: 8,
+    paddingHorizontal: 14,
+    maxWidth: '90%',
+  },
+  pinToastText: {
+    color: '#04130a',
+    fontWeight: '800',
+    fontSize: 12,
   },
 });

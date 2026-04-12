@@ -8,7 +8,7 @@ import {
   StyleSheet,
   Animated,
 } from 'react-native';
-import { SafeAreaView } from 'react-native-safe-area-context';
+import { SafeAreaView, useSafeAreaInsets } from 'react-native-safe-area-context';
 import { useRouter, useLocalSearchParams } from 'expo-router';
 import { useCourtMap } from '@/context/CourtMapContext';
 import { useCoachDiscovery } from '@/context/CoachDiscoveryContext';
@@ -143,8 +143,12 @@ function nextAvailabilityLabel(
   return `${dateLabel} at ${bestTime}`;
 }
 
+const WEEKDAY_LABELS = ['Sunday', 'Monday', 'Tuesday', 'Wednesday', 'Thursday', 'Friday', 'Saturday'] as const;
+const WEEKDAY_ORDER = [1, 2, 3, 4, 5, 6, 0] as const;
+
 export default function CoachProfileScreen() {
   const router = useRouter();
+  const insets = useSafeAreaInsets();
   const { coachId } = useLocalSearchParams<{ coachId: string }>();
   const { t, mapUserLoc } = useCourtMap();
   const { selectedCoach, loading, selectCoach, loadAvailability, selectedCoachAvailability } =
@@ -193,6 +197,24 @@ export default function CoachProfileScreen() {
     } as unknown as Href);
   }, [router, coach]);
 
+  const availabilityByDay = useMemo(() => {
+    const rows = new Map<number, string[]>();
+    for (const slot of selectedCoachAvailability) {
+      if (slot.isBlocked || slot.dayOfWeek == null) continue;
+      const slots = rows.get(slot.dayOfWeek) ?? [];
+      slots.push(`${slot.startTime} - ${slot.endTime}`);
+      rows.set(slot.dayOfWeek, slots);
+    }
+
+    return WEEKDAY_ORDER
+      .filter((day) => rows.has(day))
+      .map((day) => ({
+        day,
+        label: WEEKDAY_LABELS[day],
+        slots: (rows.get(day) ?? []).sort(),
+      }));
+  }, [selectedCoachAvailability]);
+
   if (loading && !coach) {
     return (
       <SafeAreaView style={[styles.root, { backgroundColor: t.bg }]} edges={['top']}>
@@ -227,8 +249,16 @@ export default function CoachProfileScreen() {
 
   const showPhoto = Boolean(coach.photo?.trim()) && !imgFailed;
   const initials = initialsFromName(coach.name);
-  const availDays = selectedCoachAvailability.filter((a) => !a.isBlocked).length;
+  const isNewCoach = coach.reviewCount < 5;
   const nextAvailable = nextAvailabilityLabel(selectedCoachAvailability);
+  const hasRatingData = (
+    coach.ratingOverall != null ||
+    coach.ratingOnTime != null ||
+    coach.ratingFriendly != null ||
+    coach.ratingProfessional != null ||
+    coach.ratingRecommend != null ||
+    reviewTotal > 0
+  );
 
   return (
     <SafeAreaView style={[styles.root, { backgroundColor: t.bg }]} edges={['top']}>
@@ -255,6 +285,11 @@ export default function CoachProfileScreen() {
             </View>
           )}
           <Text style={[styles.heroName, { color: t.text }]}>{coach.name}</Text>
+          {isNewCoach && (
+            <View style={[styles.newCoachBadge, { backgroundColor: t.accentBg, borderColor: t.accent }]}>
+              <Text style={[styles.newCoachBadgeText, { color: t.accent }]}>New Coach</Text>
+            </View>
+          )}
           {coach.certifications.length > 0 && (
             <Text style={[styles.heroCert, { color: t.textSec }]}>
               {coach.certifications[0]}
@@ -276,28 +311,22 @@ export default function CoachProfileScreen() {
               Experience: {coach.experienceBand} years
             </Text>
           )}
-          {nextAvailable && (
-            <Text style={[styles.heroMeta, { color: t.textSec }]}>
-              Next available: {nextAvailable}
-            </Text>
-          )}
-          {coach.responseHint && (
-            <Text style={[styles.heroHint, { color: t.textMuted }]}>{coach.responseHint}</Text>
-          )}
         </View>
 
         {/* 4-dimension rating bars */}
-        {coach.ratingOverall != null && (
-          <View style={[styles.section, { borderTopColor: t.border }]}>
-            <SectionHeader title="Ratings" theme={t} />
+        <View style={[styles.section, { borderTopColor: t.border }]}>
+          <SectionHeader title="Ratings" theme={t} />
+          {hasRatingData ? (
             <View style={styles.ratingBars}>
               <RatingBar label="On time" value={coach.ratingOnTime ?? 0} theme={t} />
               <RatingBar label="Friendly" value={coach.ratingFriendly ?? 0} theme={t} />
               <RatingBar label="Professional" value={coach.ratingProfessional ?? 0} theme={t} />
               <RatingBar label="Recommend" value={coach.ratingRecommend ?? 0} theme={t} />
             </View>
-          </View>
-        )}
+          ) : (
+            <Text style={[styles.emptyStateText, { color: t.textMuted }]}>No ratings yet</Text>
+          )}
+        </View>
 
         {/* Bio */}
         {coach.bio && (
@@ -309,49 +338,28 @@ export default function CoachProfileScreen() {
         {/* Specialties */}
         {coach.specialties.length > 0 && (
           <View style={[styles.section, { borderTopColor: t.border }]}>
-            <SectionHeader title="Specialties" theme={t} />
-            <View style={styles.chipRow}>
-              {coach.specialties.map((s) => (
-                <View
-                  key={s}
-                  style={[styles.chip, { backgroundColor: t.accentBg, borderColor: t.border }]}
-                >
-                  <Text style={[styles.chipText, { color: t.textSec }]}>{s}</Text>
-                </View>
-              ))}
-            </View>
+            <Text style={[styles.metaListText, { color: t.textSec }]}>
+              <Text style={[styles.metaListLabel, { color: t.text }]}>Specialties:</Text>{' '}
+              {coach.specialties.join(', ')}
+            </Text>
           </View>
         )}
 
         {coach.focusLevels.length > 0 && (
           <View style={[styles.section, { borderTopColor: t.border }]}>
-            <SectionHeader title="Focus levels" theme={t} />
-            <View style={styles.chipRow}>
-              {coach.focusLevels.map((level) => (
-                <View
-                  key={level}
-                  style={[styles.chip, { backgroundColor: t.bgCard, borderColor: t.border }]}
-                >
-                  <Text style={[styles.chipText, { color: t.textSec }]}>{level}</Text>
-                </View>
-              ))}
-            </View>
+            <Text style={[styles.metaListText, { color: t.textSec }]}>
+              <Text style={[styles.metaListLabel, { color: t.text }]}>Focus levels:</Text>{' '}
+              {coach.focusLevels.join(', ')}
+            </Text>
           </View>
         )}
 
         {coach.languages.length > 0 && (
           <View style={[styles.section, { borderTopColor: t.border }]}>
-            <SectionHeader title="Languages" theme={t} />
-            <View style={styles.chipRow}>
-              {coach.languages.map((lang) => (
-                <View
-                  key={lang}
-                  style={[styles.chip, { backgroundColor: t.bgCard, borderColor: t.border }]}
-                >
-                  <Text style={[styles.chipText, { color: t.textSec }]}>{lang}</Text>
-                </View>
-              ))}
-            </View>
+            <Text style={[styles.metaListText, { color: t.textSec }]}>
+              <Text style={[styles.metaListLabel, { color: t.text }]}>Languages:</Text>{' '}
+              {coach.languages.join(', ')}
+            </Text>
           </View>
         )}
 
@@ -437,14 +445,32 @@ export default function CoachProfileScreen() {
           )}
         </View>
 
-        {/* Availability summary */}
+        {/* Availability */}
         <View style={[styles.section, { borderTopColor: t.border }]}>
           <SectionHeader title="Availability" theme={t} />
           <Text style={[styles.availText, { color: t.textSec }]}>
-            {availDays > 0
-              ? `${availDays} time slot${availDays !== 1 ? 's' : ''} available this week`
-              : 'No availability loaded yet'}
+            Next available: {nextAvailable ?? 'Not available yet'}
           </Text>
+          {availabilityByDay.length > 0 ? (
+            <View style={[styles.availabilityTable, { borderColor: t.border, backgroundColor: t.bgCard }]}>
+              {availabilityByDay.map((row, index) => (
+                <View
+                  key={row.day}
+                  style={[
+                    styles.availabilityRow,
+                    index > 0 && { borderTopWidth: 1, borderTopColor: t.border },
+                  ]}
+                >
+                  <Text style={[styles.availabilityDay, { color: t.text }]}>{row.label}</Text>
+                  <Text style={[styles.availabilitySlots, { color: t.textSec }]}>
+                    {row.slots.join(', ')}
+                  </Text>
+                </View>
+              ))}
+            </View>
+          ) : (
+            <Text style={[styles.emptyStateText, { color: t.textMuted }]}>No weekly availability shared yet</Text>
+          )}
         </View>
 
         {/* Reviews */}
@@ -489,7 +515,16 @@ export default function CoachProfileScreen() {
       </ScrollView>
 
       {/* Sticky bottom bar */}
-      <View style={[styles.stickyBar, { backgroundColor: t.bg, borderTopColor: t.border }]}>
+      <View
+        style={[
+          styles.stickyBar,
+          {
+            backgroundColor: t.bg,
+            borderTopColor: t.border,
+            paddingBottom: Math.max(insets.bottom, spacing.sm) + spacing.md,
+          },
+        ]}
+      >
         {(coach.creditPacks?.length ?? 0) > 0 && (
           <Pressable
             onPress={onBuyCredits}
@@ -551,6 +586,17 @@ const styles = StyleSheet.create({
     textAlign: 'center',
     letterSpacing: -0.5,
   },
+  newCoachBadge: {
+    marginTop: spacing.xs,
+    borderWidth: 1,
+    borderRadius: borderRadius.full,
+    paddingHorizontal: spacing.sm,
+    paddingVertical: 2,
+  },
+  newCoachBadgeText: {
+    fontSize: fontSize.xs,
+    fontWeight: '700',
+  },
   heroCert: {
     fontSize: fontSize.sm,
     marginTop: spacing.xs,
@@ -574,11 +620,6 @@ const styles = StyleSheet.create({
   heroMeta: {
     fontSize: fontSize.sm,
     marginTop: spacing.xs,
-  },
-  heroHint: {
-    fontSize: fontSize.xs,
-    marginTop: spacing.xs,
-    textAlign: 'center',
   },
   section: {
     borderTopWidth: 1,
@@ -606,6 +647,15 @@ const styles = StyleSheet.create({
   chipText: {
     fontSize: fontSize.sm,
     fontWeight: '600',
+  },
+  metaListText: {
+    fontSize: fontSize.md,
+    lineHeight: fontSize.md * 1.45,
+    marginTop: spacing.xs,
+  },
+  metaListLabel: {
+    fontSize: fontSize.md,
+    fontWeight: '700',
   },
   courtRow: {
     flexDirection: 'row',
@@ -695,6 +745,34 @@ const styles = StyleSheet.create({
     fontSize: fontSize.md,
     marginTop: spacing.sm,
   },
+  availabilityTable: {
+    marginTop: spacing.md,
+    borderRadius: borderRadius.md,
+    borderWidth: 1,
+    overflow: 'hidden',
+  },
+  availabilityRow: {
+    flexDirection: 'row',
+    justifyContent: 'space-between',
+    alignItems: 'flex-start',
+    gap: spacing.md,
+    paddingVertical: spacing.md,
+    paddingHorizontal: spacing.md,
+  },
+  availabilityDay: {
+    fontSize: fontSize.sm,
+    fontWeight: '700',
+    width: 84,
+  },
+  availabilitySlots: {
+    flex: 1,
+    fontSize: fontSize.sm,
+    lineHeight: fontSize.sm * 1.45,
+  },
+  emptyStateText: {
+    fontSize: fontSize.sm,
+    marginTop: spacing.sm,
+  },
   reviewCard: {
     borderRadius: borderRadius.md,
     borderWidth: 1,
@@ -742,7 +820,7 @@ const styles = StyleSheet.create({
     gap: spacing.md,
     paddingHorizontal: spacing.lg,
     paddingTop: spacing.md,
-    paddingBottom: spacing['2xl'],
+    paddingBottom: spacing.lg,
     borderTopWidth: 1,
   },
   secondaryBtn: {

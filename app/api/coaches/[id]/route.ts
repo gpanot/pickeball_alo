@@ -26,6 +26,7 @@ const publicCoachSelect = {
   reviewCount: true,
   isActive: true,
   isProfilePublic: true,
+  isProfileLocked: true,
   phoneVerified: true,
   gender: true,
   hourlyRate1on1: true,
@@ -217,6 +218,8 @@ export async function PATCH(
           }
           data.isProfilePublic = v;
           break;
+        case 'isProfileLocked':
+          break;
         case 'phoneVerified':
         case 'isPhoneVerified':
           if (typeof v !== 'boolean') {
@@ -237,6 +240,19 @@ export async function PATCH(
 
     if (Object.keys(data).length === 0) {
       return NextResponse.json({ error: 'No valid fields to update' }, { status: 400 });
+    }
+
+    if (data.isProfilePublic === true) {
+      const lockedCheck = await prisma.coach.findUnique({
+        where: { id },
+        select: { isProfileLocked: true },
+      });
+      if (lockedCheck?.isProfileLocked) {
+        return NextResponse.json(
+          { error: 'Your profile has been locked by an administrator due to suspicious activity. Contact support.' },
+          { status: 403 },
+        );
+      }
     }
 
     if (typeof data.email === 'string' && data.email.length > 0) {
@@ -281,6 +297,7 @@ export async function PATCH(
         ratingOverall: true,
         reviewCount: true,
         isProfilePublic: true,
+        isProfileLocked: true,
         phoneVerified: true,
         gender: true,
         hourlyRate1on1: true,

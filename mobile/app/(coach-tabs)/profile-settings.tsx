@@ -454,9 +454,21 @@ export default function CoachProfileSettingsScreen() {
           <View style={styles.publicRow}>
             <View style={{ flex: 1 }}>
               <Text style={[styles.publicLabel, { color: t.text }]}>Visible to students</Text>
-              <Text style={[styles.publicHint, { color: t.textMuted }]}>Hide your profile from coach discovery.</Text>
+              {(coach as any)?.isProfileLocked ? (
+                <Text style={[styles.publicHint, { color: t.red ?? '#f44' }]}>
+                  Your profile has been locked by an administrator. Contact support to resolve.
+                </Text>
+              ) : (
+                <Text style={[styles.publicHint, { color: t.textMuted }]}>Hide your profile from coach discovery.</Text>
+              )}
             </View>
-            <Switch value={isProfilePublic} onValueChange={setIsProfilePublic} trackColor={{ false: t.border, true: t.accent }} thumbColor={t.bg} />
+            <Switch
+              value={isProfilePublic}
+              onValueChange={setIsProfilePublic}
+              disabled={Boolean((coach as any)?.isProfileLocked)}
+              trackColor={{ false: t.border, true: t.accent }}
+              thumbColor={t.bg}
+            />
           </View>
         </View>
 
@@ -482,9 +494,6 @@ export default function CoachProfileSettingsScreen() {
           </Field>
           <Field label="Bio" theme={t}>
             <TextInput value={bio} onChangeText={setBio} style={[styles.input, styles.multiline, { color: t.text, backgroundColor: t.bgInput, borderColor: t.border }]} placeholder="Tell students about your coaching style" placeholderTextColor={t.textMuted} multiline />
-          </Field>
-          <Field label="Response hint" theme={t}>
-            <TextInput value={responseHint} onChangeText={setResponseHint} style={[styles.input, { color: t.text, backgroundColor: t.bgInput, borderColor: t.border }]} placeholder="e.g. Usually responds within 2 hours" placeholderTextColor={t.textMuted} />
           </Field>
         </View>
 
