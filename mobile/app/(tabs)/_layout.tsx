@@ -12,10 +12,7 @@ export default function TabLayout() {
     t,
     hideTabBar,
     goBookTab,
-    goMapsTab,
-    goSavedTab,
     goMyBookingsTab,
-    savedIds,
     userName,
     userPhone,
   } = ctx;
@@ -29,8 +26,6 @@ export default function TabLayout() {
 
   const notProfile = !segments.includes('profile');
   const bookActive = segments.includes('(book)') && notProfile;
-  const mapsActive = segments.includes('maps') && notProfile;
-  const savedActive = segments.includes('saved') && notProfile;
   const bookingsActive = segments.includes('(bookings)') && notProfile;
   const coachActive = segments.includes('(coach)') && notProfile;
 
@@ -47,16 +42,11 @@ export default function TabLayout() {
             <BottomNav
               key={`player-bottom-nav-${segments.join('/')}`}
               bookActive={bookActive}
-              mapsActive={mapsActive}
-              savedActive={savedActive}
               bookingsActive={bookingsActive}
               coachActive={coachActive}
               onBook={goBookTab}
-              onMaps={goMapsTab}
-              onSaved={goSavedTab}
               onMyBookings={goMyBookingsTab}
               onCoach={goCoachTab}
-              savedCount={savedIds.size}
               t={t}
             />
           )
@@ -64,8 +54,7 @@ export default function TabLayout() {
         screenOptions={{ headerShown: false }}
       >
         <Tabs.Screen name="(book)" options={{ title: 'Book' }} />
-        <Tabs.Screen name="maps" options={{ title: 'Maps' }} />
-        <Tabs.Screen name="saved" options={{ title: 'Saved' }} />
+        <Tabs.Screen name="saved" options={{ href: null }} />
         <Tabs.Screen name="(coach)" options={{ title: 'Coach' }} />
         <Tabs.Screen name="(bookings)" options={{ title: 'Bookings' }} />
         <Tabs.Screen name="profile" options={{ href: null }} />

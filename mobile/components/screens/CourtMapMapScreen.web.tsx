@@ -4,7 +4,7 @@
  */
 import React, { useCallback, useState } from 'react';
 import { View, Text, Pressable, StyleSheet, ScrollView } from 'react-native';
-import BookHomeTopBar from '@/components/search/BookHomeTopBar';
+import BookScreenTopBar from '@/components/search/BookScreenTopBar';
 import MapsExploreSearch from '@/components/maps/MapsExploreSearch';
 import ResultsSearchTopBar from '@/components/search/ResultsSearchTopBar';
 import VenueCard from '@/components/venue/VenueCard';
@@ -87,11 +87,12 @@ export default function CourtMapMapScreen({
   onTimeChange,
   onRefetchSearch,
   t,
+  onToggleView,
   hasFlowPills = true,
   bookHomeTopBar = false,
+  bookMapToggleLabel,
+  onBookMapToggle,
   catalogVenueCount,
-  userName = '',
-  onOpenProfile,
   exploreMapFetch: _exploreMapFetch,
 }: CourtMapMapScreenProps) {
   const [selectedVenue, setSelectedVenue] = useState<VenueResult | null>(null);
@@ -109,18 +110,14 @@ export default function CourtMapMapScreen({
     <View style={[styles.root, { backgroundColor: t.bg }]}>
       {bookHomeTopBar ? (
         <>
-          <BookHomeTopBar
-            variant="map"
-            catalogVenueCount={catalogVenueCount}
-            userName={userName}
-            onOpenProfile={onOpenProfile ?? (() => {})}
-            t={t}
-          />
+          <BookScreenTopBar variant="map" catalogVenueCount={catalogVenueCount} t={t} />
           <MapsExploreSearch
             venues={venues}
             t={t}
             onPickVenue={focusVenueFromExplore}
             onPickPlace={focusPlaceFromExplore}
+            bookMapToggleLabel={bookMapToggleLabel}
+            onBookMapToggle={onBookMapToggle}
           />
         </>
       ) : (
@@ -139,6 +136,7 @@ export default function CourtMapMapScreen({
           onDurationChange={onDurationChange}
           onTimeChange={onTimeChange}
           onRefetchSearch={onRefetchSearch}
+          onToggleView={onToggleView}
           t={t}
         />
       )}

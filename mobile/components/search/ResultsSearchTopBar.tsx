@@ -1,6 +1,6 @@
 import React, { useState, useCallback } from 'react';
 import { View, Text, Pressable, ScrollView, StyleSheet } from 'react-native';
-import { BackIcon } from '@/components/Icons';
+import { BackIcon, ListIcon, MapIcon } from '@/components/Icons';
 import ScreenTopBar from '@/components/ui/ScreenTopBar';
 import SearchCriteriaSheet from '@/components/search/SearchCriteriaSheet';
 import { DURATIONS, getNextDays, formatDateLabel, getStartHourLabel } from '@/lib/formatters';
@@ -34,6 +34,7 @@ export interface ResultsSearchTopBarProps {
   onRefetchSearch: () => Promise<void>;
   t: ThemeTokens;
   variant?: 'list' | 'map';
+  onToggleView?: () => void;
 }
 
 export default function ResultsSearchTopBar({
@@ -52,6 +53,7 @@ export default function ResultsSearchTopBar({
   onRefetchSearch,
   t,
   variant = 'list',
+  onToggleView,
 }: ResultsSearchTopBarProps) {
   const [sheetOpen, setSheetOpen] = useState(false);
   const [applying, setApplying] = useState(false);
@@ -105,6 +107,40 @@ export default function ResultsSearchTopBar({
             </Pressable>
           ))}
         </ScrollView>
+        {onToggleView && (
+          <View style={styles.viewToggleRow}>
+            <Pressable
+              onPress={variant === 'list' ? undefined : onToggleView}
+              style={[
+                styles.viewToggleBtn,
+                {
+                  backgroundColor: variant === 'list' ? 'transparent' : t.bgCard,
+                  borderColor: variant === 'list' ? t.accent : t.border,
+                },
+              ]}
+            >
+              <ListIcon size={16} color={variant === 'list' ? t.accent : t.textSec} />
+              <Text style={{ color: variant === 'list' ? t.accent : t.textSec, fontWeight: '700', fontSize: 14 }}>
+                List
+              </Text>
+            </Pressable>
+            <Pressable
+              onPress={variant === 'map' ? undefined : onToggleView}
+              style={[
+                styles.viewToggleBtn,
+                {
+                  backgroundColor: variant === 'map' ? 'transparent' : t.bgCard,
+                  borderColor: variant === 'map' ? t.accent : t.border,
+                },
+              ]}
+            >
+              <MapIcon size={16} color={variant === 'map' ? t.accent : t.textSec} />
+              <Text style={{ color: variant === 'map' ? t.accent : t.textSec, fontWeight: '700', fontSize: 14 }}>
+                Map
+              </Text>
+            </Pressable>
+          </View>
+        )}
       </ScreenTopBar>
 
       <SearchCriteriaSheet
@@ -133,4 +169,15 @@ const styles = StyleSheet.create({
   summary: { fontSize: 15, fontWeight: '700' },
   count: { fontSize: 12, marginTop: 2 },
   sortRow: { flexDirection: 'row', gap: 8, paddingBottom: 2 },
+  viewToggleRow: { flexDirection: 'row', gap: 8, marginTop: 10 },
+  viewToggleBtn: {
+    flex: 1,
+    flexDirection: 'row',
+    alignItems: 'center',
+    justifyContent: 'center',
+    gap: 8,
+    paddingVertical: 12,
+    borderRadius: 14,
+    borderWidth: 1.5,
+  },
 });

@@ -172,3 +172,22 @@ export const CoachIcon = ({ size = 20, color = 'currentColor' }: IconProps) => (
     <Path d="M12 12c2.21 0 4-1.79 4-4s-1.79-4-4-4-4 1.79-4 4 1.79 4 4 4zm0 2c-2.67 0-8 1.34-8 4v2h16v-2c0-2.66-5.33-4-8-4z" />
   </Svg>
 );
+
+export const ListIcon = ({ size = 18, color = 'currentColor' }: IconProps) => (
+  <Svg width={size} height={size} viewBox="0 0 24 24" fill="none">
+    <Line x1="4" y1="6" x2="4" y2="6" stroke={color} strokeWidth="3" strokeLinecap="round" />
+    <Line x1="4" y1="12" x2="4" y2="12" stroke={color} strokeWidth="3" strokeLinecap="round" />
+    <Line x1="4" y1="18" x2="4" y2="18" stroke={color} strokeWidth="3" strokeLinecap="round" />
+    <Line x1="10" y1="6" x2="20" y2="6" stroke={color} strokeWidth="2" strokeLinecap="round" />
+    <Line x1="10" y1="12" x2="20" y2="12" stroke={color} strokeWidth="2" strokeLinecap="round" />
+    <Line x1="10" y1="18" x2="20" y2="18" stroke={color} strokeWidth="2" strokeLinecap="round" />
+  </Svg>
+);
+
+export const MapIcon = ({ size = 18, color = 'currentColor' }: IconProps) => (
+  <Svg width={size} height={size} viewBox="0 0 24 24" fill="none">
+    <Polygon points="1,6 1,22 8,18 16,22 23,18 23,2 16,6 8,2" stroke={color} strokeWidth="2" strokeLinejoin="round" />
+    <Line x1="8" y1="2" x2="8" y2="18" stroke={color} strokeWidth="2" />
+    <Line x1="16" y1="6" x2="16" y2="22" stroke={color} strokeWidth="2" />
+  </Svg>
+);

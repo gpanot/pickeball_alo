@@ -5,7 +5,7 @@ import CourtMapMapScreen from '@/components/screens/CourtMapMapScreen';
 import { useCourtMap } from '@/context/CourtMapContext';
 import type { VenueResult } from '@/lib/types';
 
-export default function MapsTabRoute() {
+export default function BookMapRoute() {
   const router = useRouter();
   const ctx = useCourtMap();
   const {
@@ -28,16 +28,23 @@ export default function MapsTabRoute() {
     refetchVenues,
     fetchExploreMapVenues,
     catalogVenueCount,
-    userName,
     mapUserLoc,
     setMapUserLoc,
     mapGeoInitDone,
   } = ctx;
 
-  const openVenueFromMaps = useCallback(
+  const openVenueFromBookMap = useCallback(
     (v: VenueResult) => openDetail(v, { presetSlotsFromSearch: false }),
     [openDetail],
   );
+
+  const goBookHome = useCallback(() => {
+    router.replace('/(tabs)/(book)');
+  }, [router]);
+
+  const markGeoInitDone = useCallback(() => {
+    mapGeoInitDone.current = true;
+  }, [mapGeoInitDone]);
 
   return (
     <View style={[styles.root, { backgroundColor: t.bg }]}>
@@ -52,7 +59,7 @@ export default function MapsTabRoute() {
         onBack={backFromResults}
         onSort={handleSort}
         onToggleSaved={toggleSaved}
-        onOpenVenue={openVenueFromMaps}
+        onOpenVenue={openVenueFromBookMap}
         onSearchQueryChange={setSearchQuery}
         onDateChange={setSelectedDate}
         onDurationChange={setSelectedDuration}
@@ -61,14 +68,14 @@ export default function MapsTabRoute() {
         t={t}
         hasFlowPills={false}
         bookHomeTopBar
+        bookMapToggleLabel="Book"
+        onBookMapToggle={goBookHome}
         catalogVenueCount={catalogVenueCount}
-        userName={userName}
-        onOpenProfile={() => router.push('/(tabs)/profile')}
         exploreMapFetch={fetchExploreMapVenues}
         initialUserLoc={mapUserLoc}
         onUserLocResolved={setMapUserLoc}
         geoInitDone={mapGeoInitDone.current}
-        onGeoInitDone={useCallback(() => { mapGeoInitDone.current = true; }, [mapGeoInitDone])}
+        onGeoInitDone={markGeoInitDone}
       />
     </View>
   );

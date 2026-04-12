@@ -29,6 +29,8 @@ export interface SearchFormFieldsProps {
   t: ThemeTokens;
   /** When the location field is rendered elsewhere (e.g. MapsExploreSearch on Book home). */
   hideLocationSearch?: boolean;
+  /** Hide “Near me” (e.g. booking a specific saved venue). */
+  hideNearMe?: boolean;
 }
 
 export default function SearchFormFields({
@@ -42,6 +44,7 @@ export default function SearchFormFields({
   onTimeChange,
   t,
   hideLocationSearch = false,
+  hideNearMe = false,
 }: SearchFormFieldsProps) {
   const dates = getNextDays(7);
   const timeScrollRef = useRef<ScrollView>(null);
@@ -144,23 +147,25 @@ export default function SearchFormFields({
         })}
       </ScrollView>
 
-      <View
-        style={[
-          styles.nearRow,
-          { backgroundColor: t.bgCard, borderColor: t.border },
-        ]}
-      >
-        <View style={styles.nearLeft}>
-          <LocateIcon color={t.accent} />
-          <View>
-            <Text style={[styles.nearTitle, { color: t.text }]}>Near me</Text>
-            <Text style={[styles.nearSub, { color: t.textSec }]}>Within 10 km radius</Text>
+      {!hideNearMe && (
+        <View
+          style={[
+            styles.nearRow,
+            { backgroundColor: t.bgCard, borderColor: t.border },
+          ]}
+        >
+          <View style={styles.nearLeft}>
+            <LocateIcon color={t.accent} />
+            <View>
+              <Text style={[styles.nearTitle, { color: t.text }]}>Near me</Text>
+              <Text style={[styles.nearSub, { color: t.textSec }]}>Within 10 km radius</Text>
+            </View>
+          </View>
+          <View style={[styles.toggle, { backgroundColor: t.accent }]}>
+            <View style={styles.toggleKnob} />
           </View>
         </View>
-        <View style={[styles.toggle, { backgroundColor: t.accent }]}>
-          <View style={styles.toggleKnob} />
-        </View>
-      </View>
+      )}
     </View>
   );
 }

@@ -20,12 +20,14 @@ export interface CourtMapMapScreenProps {
   onRefetchSearch: () => Promise<void>;
   t: ThemeTokens;
   userAreaRadiusKm?: number;
+  onToggleView?: () => void;
   hasFlowPills?: boolean;
   bookHomeTopBar?: boolean;
   catalogVenueCount?: number | null;
-  userName?: string;
-  onOpenProfile?: () => void;
-  /** Maps tab only: load venues by map center + radius (nearby first, wider when zoomed out). */
+  /** Book home / embedded map: switch between list and map (label shown next to explore search). */
+  bookMapToggleLabel?: 'Map' | 'Book';
+  onBookMapToggle?: () => void;
+  /** Book map only: load venues by map center + radius (nearby first, wider when zoomed out). */
   exploreMapFetch?: (opts: { lat: number; lng: number; radiusKm: number; reason: string }) => void;
   /** Cached user location from context (survives tab switches). */
   initialUserLoc?: { lat: number; lng: number } | null;

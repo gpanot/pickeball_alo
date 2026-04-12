@@ -12,6 +12,9 @@ interface MapsExploreSearchProps {
   onPickPlace: (lat: number, lng: number) => void;
   /** Keeps parent search state in sync while typing (e.g. Book tab + SEARCH COURTS). */
   onQueryChange?: (q: string) => void;
+  /** Pill next to the search field (Book ↔ Map). */
+  bookMapToggleLabel?: 'Map' | 'Book';
+  onBookMapToggle?: () => void;
 }
 
 function normalize(s: string): string {
@@ -24,6 +27,8 @@ export default function MapsExploreSearch({
   onPickVenue,
   onPickPlace,
   onQueryChange,
+  bookMapToggleLabel,
+  onBookMapToggle,
 }: MapsExploreSearchProps) {
   const [query, setQuery] = useState('');
   const [open, setOpen] = useState(false);
@@ -95,28 +100,42 @@ export default function MapsExploreSearch({
 
   const barBg = '#121212';
 
+  const showToggle = Boolean(bookMapToggleLabel && onBookMapToggle);
+
   return (
     <View style={[styles.wrap, { backgroundColor: t.bg, borderBottomColor: t.border }]}>
-      <Pressable
-        style={[styles.bar, { backgroundColor: barBg, borderColor: t.border }]}
-        onPress={() => inputRef.current?.focus()}
-      >
-        <PinIcon color={t.accent} size={20} />
-        <TextInput
-          ref={inputRef}
-          style={[styles.input, { color: t.text }]}
-          value={query}
-          onChangeText={(q) => {
-            setQuery(q);
-            setOpen(true);
-            onQueryChange?.(q);
-          }}
-          onFocus={() => setOpen(true)}
-          placeholder="Search area or venue name..."
-          placeholderTextColor={t.textMuted}
-          autoCorrect={false}
-        />
-      </Pressable>
+      <View style={styles.searchRow}>
+        <Pressable
+          style={[styles.bar, { backgroundColor: barBg, borderColor: t.border }]}
+          onPress={() => inputRef.current?.focus()}
+        >
+          <PinIcon color={t.accent} size={20} />
+          <TextInput
+            ref={inputRef}
+            style={[styles.input, { color: t.text }]}
+            value={query}
+            onChangeText={(q) => {
+              setQuery(q);
+              setOpen(true);
+              onQueryChange?.(q);
+            }}
+            onFocus={() => setOpen(true)}
+            placeholder="Search area or venue name..."
+            placeholderTextColor={t.textMuted}
+            autoCorrect={false}
+          />
+        </Pressable>
+        {showToggle ? (
+          <Pressable
+            accessibilityRole="button"
+            accessibilityLabel={bookMapToggleLabel === 'Map' ? 'Open map' : 'Back to book'}
+            onPress={onBookMapToggle}
+            style={[styles.togglePill, { backgroundColor: t.accent }]}
+          >
+            <Text style={styles.togglePillText}>{bookMapToggleLabel}</Text>
+          </Pressable>
+        ) : null}
+      </View>
 
       {showPanel && (
         <View
@@ -165,7 +184,10 @@ export default function MapsExploreSearch({
 
 const styles = StyleSheet.create({
   wrap: { paddingHorizontal: 16, paddingBottom: 12, borderBottomWidth: 1 },
+  searchRow: { flexDirection: 'row', alignItems: 'center', gap: 10 },
   bar: {
+    flex: 1,
+    minWidth: 0,
     flexDirection: 'row',
     alignItems: 'center',
     gap: 12,
@@ -174,6 +196,13 @@ const styles = StyleSheet.create({
     borderRadius: 999,
     borderWidth: 1,
   },
+  togglePill: {
+    paddingVertical: 10,
+    paddingHorizontal: 14,
+    borderRadius: 999,
+    justifyContent: 'center',
+  },
+  togglePillText: { color: '#000', fontWeight: '800', fontSize: 14, letterSpacing: 0.4 },
   input: { flex: 1, fontSize: 15, padding: 0 },
   panel: {
     marginTop: 8,

@@ -1,11 +1,12 @@
 import React, { useCallback, useMemo } from 'react';
 import { View, Text, Pressable, FlatList, StyleSheet } from 'react-native';
+import { SafeAreaView } from 'react-native-safe-area-context';
 import { BackIcon } from '@/components/Icons';
-import ScreenTopBar from '@/components/ui/ScreenTopBar';
 import VenueCard from '@/components/venue/VenueCard';
 import SearchCriteriaSheet from '@/components/search/SearchCriteriaSheet';
 import ResultsFlowPills from '@/components/ui/ResultsFlowPills';
 import { useCourtMap } from '@/context/CourtMapContext';
+import { spacing, fontSize } from '@/mobile/lib/theme';
 import type { VenueResult } from '@/lib/types';
 
 export default function SavedRoute() {
@@ -72,19 +73,31 @@ export default function SavedRoute() {
   );
 
   return (
-    <View style={[styles.root, { backgroundColor: t.bg }]}>
-      <ScreenTopBar t={t} contentStyle={styles.topBarInner}>
-        <Pressable onPress={savedViaResultsFlow ? backFromSavedInResultsFlow : backFromSavedOrBookings}>
-          <BackIcon color={t.text} />
-        </Pressable>
-        <Text style={[styles.headerTitle, { color: t.text }]}>Saved Courts</Text>
-        <View style={{ width: 30 }} />
-      </ScreenTopBar>
+    <SafeAreaView style={[styles.root, { backgroundColor: t.bg }]} edges={['top']}>
+      <View style={styles.header}>
+        <View style={styles.titleRow}>
+          <Pressable
+            onPress={savedViaResultsFlow ? backFromSavedInResultsFlow : backFromSavedOrBookings}
+            hitSlop={8}
+            accessibilityRole="button"
+            accessibilityLabel="Go back"
+          >
+            <BackIcon color={t.text} />
+          </Pressable>
+          <Text style={[styles.screenTitle, { color: t.text }]} numberOfLines={1}>
+            Saved Courts
+          </Text>
+        </View>
+      </View>
       <FlatList
         data={savedVenues}
         renderItem={renderItem}
         keyExtractor={keyExtractor}
-        contentContainerStyle={{ paddingHorizontal: 16, paddingTop: 12, paddingBottom: bottomPad }}
+        contentContainerStyle={{
+          paddingHorizontal: spacing.lg,
+          paddingTop: spacing.md,
+          paddingBottom: bottomPad,
+        }}
         ListEmptyComponent={ListEmpty}
         removeClippedSubviews
       />
@@ -113,20 +126,29 @@ export default function SavedRoute() {
         onDurationChange={setSelectedDuration}
         onTimeChange={setSelectedTime}
       />
-    </View>
+    </SafeAreaView>
   );
 }
 
 const styles = StyleSheet.create({
   root: { flex: 1 },
-  topBarInner: {
+  /** Match `(coach)/index` header chrome */
+  header: {
+    paddingHorizontal: spacing.lg,
+    paddingTop: spacing.sm,
+    paddingBottom: spacing.md,
+  },
+  titleRow: {
     flexDirection: 'row',
     alignItems: 'center',
-    justifyContent: 'space-between',
-    paddingTop: 14,
-    paddingBottom: 14,
+    gap: spacing.md,
   },
-  headerTitle: { fontSize: 16, fontWeight: '700' },
+  screenTitle: {
+    flex: 1,
+    fontSize: fontSize['2xl'],
+    fontWeight: '800',
+    letterSpacing: -0.5,
+  },
   center: { alignItems: 'center', paddingVertical: 60, paddingHorizontal: 20 },
   emptyTitle: { fontSize: 16, fontWeight: '600', marginBottom: 8 },
 });

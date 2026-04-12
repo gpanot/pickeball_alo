@@ -10,6 +10,7 @@ export default function BookStackLayout() {
       }}
     >
       <Stack.Screen name="index" />
+      <Stack.Screen name="map" />
       <Stack.Screen name="results" />
       <Stack.Screen name="results-map" />
     </Stack>

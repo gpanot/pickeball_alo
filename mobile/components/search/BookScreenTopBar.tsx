@@ -1,29 +1,23 @@
 import React from 'react';
-import { Pressable, Text, View, StyleSheet } from 'react-native';
+import { Text, View, StyleSheet } from 'react-native';
 import ScreenTopBar from '@/components/ui/ScreenTopBar';
 import type { ThemeTokens } from '@/lib/theme';
 
-export interface BookHomeTopBarProps {
+export interface BookScreenTopBarProps {
   catalogVenueCount?: number | null;
-  userName: string;
-  onOpenProfile: () => void;
   t: ThemeTokens;
+  /** Higher z-index when stacked above map chrome. */
   variant?: 'book' | 'map';
 }
 
-function profileInitial(name: string): string {
-  const s = name.trim();
-  if (!s) return '?';
-  return s.charAt(0).toUpperCase();
-}
-
-export default function BookHomeTopBar({
+/**
+ * Book tab header: COURTMAP branding and optional catalog count (no profile — see My Bookings).
+ */
+export default function BookScreenTopBar({
   catalogVenueCount,
-  userName,
-  onOpenProfile,
   t,
   variant = 'book',
-}: BookHomeTopBarProps) {
+}: BookScreenTopBarProps) {
   return (
     <ScreenTopBar
       t={t}
@@ -41,14 +35,6 @@ export default function BookHomeTopBar({
             </Text>
           )}
         </View>
-        <Pressable
-          accessibilityRole="button"
-          accessibilityLabel="Open profile"
-          onPress={onOpenProfile}
-          style={[styles.avatar, { backgroundColor: t.accentBgStrong, borderColor: t.accent }]}
-        >
-          <Text style={[styles.avatarText, { color: t.accent }]}>{profileInitial(userName)}</Text>
-        </Pressable>
       </View>
     </ScreenTopBar>
   );
@@ -59,18 +45,16 @@ const styles = StyleSheet.create({
   row: {
     flexDirection: 'row',
     alignItems: 'center',
-    justifyContent: 'space-between',
+    justifyContent: 'flex-start',
   },
-  left: { flexDirection: 'row', alignItems: 'baseline', gap: 10, flexWrap: 'wrap', flex: 1, minWidth: 0 },
+  left: {
+    flexDirection: 'row',
+    alignItems: 'baseline',
+    gap: 10,
+    flexWrap: 'wrap',
+    flex: 1,
+    minWidth: 0,
+  },
   logo: { fontSize: 18, fontWeight: '900', letterSpacing: -0.5 },
   venueCount: { fontSize: 10, fontWeight: '700', letterSpacing: 1.2 },
-  avatar: {
-    width: 40,
-    height: 40,
-    borderRadius: 20,
-    borderWidth: 2,
-    alignItems: 'center',
-    justifyContent: 'center',
-  },
-  avatarText: { fontWeight: '800', fontSize: 16 },
 });

@@ -1,7 +1,6 @@
 import React from 'react';
 import { View, StyleSheet } from 'react-native';
 import CourtMapMapScreen from '@/components/screens/CourtMapMapScreen';
-import ResultsFlowPills from '@/components/ui/ResultsFlowPills';
 import { useCourtMap } from '@/context/CourtMapContext';
 
 export default function ResultsMapRoute() {
@@ -24,9 +23,7 @@ export default function ResultsMapRoute() {
     setSelectedDuration,
     setSelectedTime,
     refetchVenues,
-    openSavedFromResultsFlow,
     onResultsFlowPrimary,
-    resultsFlowContext,
   } = ctx;
 
   return (
@@ -48,16 +45,10 @@ export default function ResultsMapRoute() {
         onDurationChange={setSelectedDuration}
         onTimeChange={setSelectedTime}
         onRefetchSearch={refetchVenues}
+        onToggleView={onResultsFlowPrimary}
         t={t}
-        hasFlowPills
+        hasFlowPills={false}
         bookHomeTopBar={false}
-      />
-      <ResultsFlowPills
-        context={resultsFlowContext}
-        savedCount={savedIds.size}
-        onPrimary={onResultsFlowPrimary}
-        onSaved={openSavedFromResultsFlow}
-        t={t}
       />
     </View>
   );

@@ -32,6 +32,10 @@ import { useAsyncStorage } from '@/hooks/useAsyncStorage';
 import { mapDebug } from '@/mobile/lib/map-debug';
 import { syncVenues as syncVenueCache, getCachedVenue } from '@/mobile/lib/venue-cache';
 
+/** When GPS is unavailable, search uses this center (HCMC). */
+const DEFAULT_SEARCH_ORIGIN = { lat: 10.79, lng: 106.71 } as const;
+const DEFAULT_SEARCH_RADIUS_KM = 10;
+
 function generateId(): string {
   return 'u_' + Math.random().toString(36).slice(2) + Date.now().toString(36);
 }
@@ -206,14 +210,15 @@ function useCourtMapInner() {
       const dates = getNextDays(7);
       const dateStr =
         selectedDate < dates.length ? toLocalDateKey(dates[selectedDate]) : toLocalDateKey(new Date());
+      const origin = mapUserLoc ?? DEFAULT_SEARCH_ORIGIN;
       const results = await searchVenues({
         query: searchQuery,
         date: dateStr,
         duration: DURATIONS[selectedDuration] ?? '1h',
         sort: sortBy,
-        lat: 10.79,
-        lng: 106.71,
-        radius: 10,
+        lat: origin.lat,
+        lng: origin.lng,
+        radius: DEFAULT_SEARCH_RADIUS_KM,
       });
       setSearchTotalResults(results);
       setSearchDisplayCount(searchPageSize);
@@ -226,7 +231,7 @@ function useCourtMapInner() {
     } finally {
       setLoading(false);
     }
-  }, [searchQuery, selectedDate, selectedDuration, sortBy]);
+  }, [searchQuery, selectedDate, selectedDuration, sortBy, mapUserLoc]);
 
   const loadMoreSearchResults = useCallback(() => {
     if (!searchHasMore) return;
@@ -546,20 +551,6 @@ function useCourtMapInner() {
   const searchDate =
     selectedDate < dates.length ? toLocalDateKey(dates[selectedDate]) : toLocalDateKey(new Date());
 
-  const goMapsTab = useCallback(() => {
-    if (segments.includes('maps')) return;
-    setSearchQuery('');
-    setSelectedDate(0);
-    setSelectedDuration(0);
-    setSelectedTime(4);
-    setSortBy('distance');
-    lastExploreFetchKeyRef.current = '';
-    router.replace('/(tabs)/maps');
-    mapDebug('maps_tab_navigate', {
-      note: 'Reset search state; map screen starts fresh from explore.',
-    });
-  }, [router, segments]);
-
   const goSavedTab = useCallback(() => {
     if (segments.includes('saved') && !savedViaResultsFlow) return;
     setSavedViaResultsFlow(false);
@@ -598,7 +589,11 @@ function useCourtMapInner() {
       : 'results';
 
   const goBookTab = useCallback(() => {
-    const onBookHome = segments.includes('(book)') && !segments.includes('results') && !segments.includes('results-map');
+    const onBookHome =
+      segments.includes('(book)') &&
+      !segments.includes('results') &&
+      !segments.includes('results-map') &&
+      !segments.includes('map');
     if (onBookHome) return;
     router.replace('/(tabs)/(book)');
   }, [router, segments]);
@@ -702,7 +697,6 @@ function useCourtMapInner() {
     mapUserLoc,
     setMapUserLoc,
     mapGeoInitDone,
-    goMapsTab,
     goSavedTab,
     goMyBookingsTab,
     openSavedFromResultsFlow,
@@ -727,7 +721,7 @@ function useCourtMapInner() {
     openDetail, bookingBeingEdited, beginEditBooking, closeDetail, resetVenueDetail, toggleSlot, loadBookings,
     handleCancelBooking, handleSaveProfile, persistPlayerProfileFromBooking, handleSavedBookConfirm,
     handleDetailAvailabilityDateChange, mapUserLoc, mapGeoInitDone,
-    goMapsTab, goSavedTab, goMyBookingsTab, openSavedFromResultsFlow,
+    goSavedTab, goMyBookingsTab, openSavedFromResultsFlow,
     onResultsFlowPrimary, resultsFlowContext, logoutPlayer, goBookTab, backFromResults,
     backFromSavedOrBookings, backFromSavedInResultsFlow, backFromProfile,
   ]);

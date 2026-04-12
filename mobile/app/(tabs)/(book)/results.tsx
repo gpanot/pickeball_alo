@@ -2,7 +2,6 @@ import React, { useCallback, useMemo } from 'react';
 import { View, Text, FlatList, ActivityIndicator, StyleSheet, Animated } from 'react-native';
 import ResultsSearchTopBar from '@/components/search/ResultsSearchTopBar';
 import VenueCard from '@/components/venue/VenueCard';
-import ResultsFlowPills from '@/components/ui/ResultsFlowPills';
 import {
   getBookTimeShortLabel,
   pickSlotsForSearch,
@@ -70,9 +69,7 @@ export default function ResultsRoute() {
     loadMoreSearchResults,
     searchHasMore,
     searchTotalCount,
-    openSavedFromResultsFlow,
     onResultsFlowPrimary,
-    resultsFlowContext,
   } = ctx;
 
   const hour = START_HOUR_OPTIONS[selectedTime]?.hour ?? 9;
@@ -147,25 +144,19 @@ export default function ResultsRoute() {
         onDurationChange={setSelectedDuration}
         onTimeChange={setSelectedTime}
         onRefetchSearch={refetchVenues}
+        onToggleView={onResultsFlowPrimary}
         t={t}
       />
       <FlatList
         data={venues}
         renderItem={renderItem}
         keyExtractor={keyExtractor}
-        contentContainerStyle={{ paddingHorizontal: 16, paddingBottom: 120, paddingTop: 12 }}
+        contentContainerStyle={{ paddingHorizontal: 16, paddingBottom: 40, paddingTop: 12 }}
         ListEmptyComponent={ListEmpty}
         ListFooterComponent={ListFooter}
         onEndReached={loadMoreSearchResults}
         onEndReachedThreshold={0.5}
         removeClippedSubviews
-      />
-      <ResultsFlowPills
-        context={resultsFlowContext}
-        savedCount={savedIds.size}
-        onPrimary={onResultsFlowPrimary}
-        onSaved={openSavedFromResultsFlow}
-        t={t}
       />
     </View>
   );

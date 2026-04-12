@@ -7,6 +7,7 @@ import {
   ScrollView,
   StyleSheet,
   ActivityIndicator,
+  useWindowDimensions,
 } from 'react-native';
 import { useSafeAreaInsets } from 'react-native-safe-area-context';
 import { CourtIcon, SearchIcon } from '@/components/Icons';
@@ -36,18 +37,32 @@ export default function SearchCriteriaSheet({
   ...fields
 }: SearchCriteriaSheetProps) {
   const insets = useSafeAreaInsets();
+  const { height: winH } = useWindowDimensions();
   const bookFlow = Boolean(bookAtVenueName);
   const bookTimePhrase = getBookTimeShortLabel(fields.selectedTime);
   const primaryLabel = bookFlow
     ? bookTimePhrase
       ? `Book for ${bookTimePhrase}`
       : 'Book court'
-    : 'UPDATE SEARCH';
+      : 'UPDATE SEARCH';
+
+  /** Tall enough sheet + flex scroll so the Book CTA sits on the bottom edge of the modal. */
+  const bookSheetHeight = winH * 0.72;
 
   return (
     <Modal visible={open} animationType="slide" transparent onRequestClose={onClose}>
       <Pressable style={[styles.overlay, { backgroundColor: t.overlay }]} onPress={onClose} />
-      <View style={[styles.sheet, { backgroundColor: t.sheetBg, paddingBottom: Math.max(16, insets.bottom) }]}>
+      <View
+        style={[
+          styles.sheet,
+          {
+            backgroundColor: t.sheetBg,
+            paddingBottom: Math.max(16, insets.bottom),
+            maxHeight: winH * 0.88,
+            ...(bookFlow ? { height: bookSheetHeight } : {}),
+          },
+        ]}
+      >
         <View style={styles.handleWrap}>
           <View style={[styles.handle, { backgroundColor: t.textMuted }]} />
         </View>
@@ -61,8 +76,16 @@ export default function SearchCriteriaSheet({
               : 'Update filters and search again'}
           </Text>
         </View>
-        <ScrollView style={styles.body} keyboardShouldPersistTaps="handled">
-          <SearchFormFields t={t} {...fields} />
+        <ScrollView
+          style={[styles.body, bookFlow && styles.bodyBookFlow]}
+          keyboardShouldPersistTaps="handled"
+        >
+          <SearchFormFields
+            t={t}
+            {...fields}
+            hideLocationSearch={bookFlow}
+            hideNearMe={bookFlow}
+          />
         </ScrollView>
         <View style={[styles.footer, { borderTopColor: t.border, backgroundColor: t.sheetBg }]}>
           <Pressable
@@ -97,9 +120,9 @@ const styles = StyleSheet.create({
     left: 0,
     right: 0,
     bottom: 0,
-    maxHeight: '88%',
     borderTopLeftRadius: 20,
     borderTopRightRadius: 20,
+    flexDirection: 'column',
   },
   handleWrap: { alignItems: 'center', paddingTop: 12, paddingBottom: 8 },
   handle: { width: 40, height: 4, borderRadius: 2, opacity: 0.45 },
@@ -107,6 +130,7 @@ const styles = StyleSheet.create({
   title: { fontSize: 17, fontWeight: '800' },
   sub: { marginTop: 6, fontSize: 13 },
   body: { flexGrow: 0, maxHeight: '55%', paddingHorizontal: 20, paddingVertical: 16 },
+  bodyBookFlow: { flexGrow: 1, flexShrink: 1, minHeight: 0, maxHeight: undefined },
   footer: { paddingHorizontal: 20, paddingTop: 12, borderTopWidth: 1 },
   cta: {
     flexDirection: 'row',

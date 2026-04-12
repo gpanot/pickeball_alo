@@ -1,9 +1,10 @@
 import React, { useCallback, useEffect, useMemo, useState } from 'react';
 import { View, Text, Pressable, FlatList, StyleSheet } from 'react-native';
+import { SafeAreaView } from 'react-native-safe-area-context';
 import { useFocusEffect, useRouter, type Href } from 'expo-router';
 import { Ionicons } from '@expo/vector-icons';
 import { BackIcon } from '@/components/Icons';
-import ScreenTopBar from '@/components/ui/ScreenTopBar';
+import ProfileAvatarButton from '@/components/ui/ProfileAvatarButton';
 import BookingCard from '@/components/booking/BookingCard';
 import { useCourtMap } from '@/context/CourtMapContext';
 import { listSessions } from '@/mobile/lib/coach-api';
@@ -18,7 +19,17 @@ type TabKey = 'upcoming' | 'past' | 'all';
 export default function BookingsListRoute() {
   const router = useRouter();
   const ctx = useCourtMap();
-  const { t, bookings, bookingsLoading, backFromSavedOrBookings, handleCancelBooking, beginEditBooking, userId, loadBookings } = ctx;
+  const {
+    t,
+    bookings,
+    bookingsLoading,
+    backFromSavedOrBookings,
+    handleCancelBooking,
+    beginEditBooking,
+    userId,
+    userName,
+    loadBookings,
+  } = ctx;
 
   useFocusEffect(
     useCallback(() => {
@@ -139,19 +150,30 @@ export default function BookingsListRoute() {
         )}
       </View>
     );
-  }, [isLoading, t, section]);
+  }, [isLoading, t, section, router]);
 
   return (
-    <View style={[styles.root, { backgroundColor: t.bg }]}>
-      <ScreenTopBar t={t} contentStyle={styles.topBarInner}>
-        <View style={{ flexDirection: 'row', alignItems: 'center', gap: 12, marginBottom: 12 }}>
-          <Pressable onPress={backFromSavedOrBookings}>
+    <SafeAreaView style={[styles.root, { backgroundColor: t.bg }]} edges={['top']}>
+      <View style={styles.header}>
+        <View style={styles.titleRow}>
+          <Pressable
+            onPress={backFromSavedOrBookings}
+            hitSlop={8}
+            accessibilityRole="button"
+            accessibilityLabel="Go back"
+          >
             <BackIcon color={t.text} />
           </Pressable>
-          <Text style={[styles.title, { color: t.text }]}>My Bookings</Text>
+          <Text style={[styles.screenTitle, { color: t.text }]} numberOfLines={1}>
+            My Bookings
+          </Text>
+          <ProfileAvatarButton
+            userName={userName}
+            onPress={() => router.push('/(tabs)/profile')}
+            t={t}
+          />
         </View>
 
-        {/* Segmented control: Court Bookings / Coach Sessions */}
         <View style={[styles.segmentRow, { backgroundColor: t.bgInput, borderColor: t.border }]}>
           <Pressable
             onPress={() => setSection('courts')}
@@ -187,31 +209,42 @@ export default function BookingsListRoute() {
           </Pressable>
         </View>
 
-        <View style={{ flexDirection: 'row' }}>
+        <View style={styles.tabRow}>
           <Pressable onPress={() => setTab('upcoming')} style={tabStyle('upcoming')}>
-            <Text style={{ textAlign: 'center', fontSize: 13, fontWeight: '700', color: tab === 'upcoming' ? t.accent : t.textSec }}>
+            <Text
+              style={[
+                styles.tabLabel,
+                { color: tab === 'upcoming' ? t.accent : t.textSec },
+              ]}
+            >
               Upcoming
             </Text>
           </Pressable>
           <Pressable onPress={() => setTab('past')} style={tabStyle('past')}>
-            <Text style={{ textAlign: 'center', fontSize: 13, fontWeight: '700', color: tab === 'past' ? t.accent : t.textSec }}>
+            <Text
+              style={[styles.tabLabel, { color: tab === 'past' ? t.accent : t.textSec }]}
+            >
               Past
             </Text>
           </Pressable>
           <Pressable onPress={() => setTab('all')} style={tabStyle('all')}>
-            <Text style={{ textAlign: 'center', fontSize: 13, fontWeight: '700', color: tab === 'all' ? t.accent : t.textSec }}>
+            <Text style={[styles.tabLabel, { color: tab === 'all' ? t.accent : t.textSec }]}>
               All
             </Text>
           </Pressable>
         </View>
-      </ScreenTopBar>
+      </View>
 
       {section === 'courts' ? (
         <FlatList
           data={filteredBookings}
           renderItem={renderBooking}
           keyExtractor={keyExtractorBooking}
-          contentContainerStyle={{ padding: 16, paddingBottom: 100 }}
+          contentContainerStyle={{
+            paddingHorizontal: spacing.lg,
+            paddingTop: spacing.md,
+            paddingBottom: 100,
+          }}
           ListEmptyComponent={ListEmpty}
           removeClippedSubviews
         />
@@ -220,19 +253,40 @@ export default function BookingsListRoute() {
           data={filteredSessions}
           renderItem={renderSession}
           keyExtractor={keyExtractorSession}
-          contentContainerStyle={{ padding: 16, paddingBottom: 100 }}
+          contentContainerStyle={{
+            paddingHorizontal: spacing.lg,
+            paddingTop: spacing.md,
+            paddingBottom: 100,
+          }}
           ListEmptyComponent={ListEmpty}
           removeClippedSubviews
         />
       )}
-    </View>
+    </SafeAreaView>
   );
 }
 
 const styles = StyleSheet.create({
   root: { flex: 1 },
-  topBarInner: { paddingTop: 14, paddingBottom: 8 },
-  title: { fontSize: 16, fontWeight: '700' },
+  /** Match `(coach)/index` header chrome */
+  header: {
+    paddingHorizontal: spacing.lg,
+    paddingTop: spacing.sm,
+    paddingBottom: spacing.md,
+  },
+  titleRow: {
+    flexDirection: 'row',
+    alignItems: 'center',
+    gap: spacing.md,
+    marginBottom: spacing.md,
+  },
+  screenTitle: {
+    flex: 1,
+    minWidth: 0,
+    fontSize: fontSize['2xl'],
+    fontWeight: '800',
+    letterSpacing: -0.5,
+  },
   segmentRow: {
     flexDirection: 'row',
     borderRadius: borderRadius.md,
@@ -240,6 +294,12 @@ const styles = StyleSheet.create({
     padding: spacing.xs,
     marginBottom: spacing.md,
     gap: spacing.xs,
+  },
+  tabRow: { flexDirection: 'row' },
+  tabLabel: {
+    textAlign: 'center',
+    fontSize: fontSize.sm,
+    fontWeight: '700',
   },
   segmentBtn: {
     flex: 1,
