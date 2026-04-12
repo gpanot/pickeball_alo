@@ -41,6 +41,7 @@ interface VenueAvailabilityState {
   pricePerHour: number | null;
   totalPrice: number | null;
   slotCount: number;
+  hourOnlyConflict: boolean;
 }
 
 function addMinutes(t: string, mins: number): string {
@@ -74,12 +75,15 @@ function computeVenueAvailability(
   selectedTime: string | null,
   durationMins: number,
 ): VenueAvailabilityState {
-  if (!venue || !venue.courts?.length || !selectedTime) {
-    return { available: false, pricePerHour: null, totalPrice: null, slotCount: 0 };
+  const empty: VenueAvailabilityState = { available: false, pricePerHour: null, totalPrice: null, slotCount: 0, hourOnlyConflict: false };
+  if (!venue || !venue.courts?.length || !selectedTime) return empty;
+
+  if (venue.use30MinSlots === false && durationMins % 60 !== 0) {
+    return { ...empty, hourOnlyConflict: true };
   }
 
   const startMinute = parseHmToMinutes(selectedTime);
-  if (startMinute == null) return { available: false, pricePerHour: null, totalPrice: null, slotCount: 0 };
+  if (startMinute == null) return empty;
 
   const stepMinutes = detectStepMinutes(venue);
   const runLen = Math.max(1, Math.round(durationMins / stepMinutes));
@@ -114,8 +118,8 @@ function computeVenueAvailability(
     }
   }
 
-  if (!best) return { available: false, pricePerHour: null, totalPrice: null, slotCount: runLen };
-  return { available: true, pricePerHour: best.perHour, totalPrice: best.total, slotCount: runLen };
+  if (!best) return { available: false, pricePerHour: null, totalPrice: null, slotCount: runLen, hourOnlyConflict: false };
+  return { available: true, pricePerHour: best.perHour, totalPrice: best.total, slotCount: runLen, hourOnlyConflict: false };
 }
 
 function generateStartTimes(
@@ -162,6 +166,7 @@ export default function SessionBookingScreen() {
   const [venueSlotPrices, setVenueSlotPrices] = useState<Record<string, number | null>>({});
   const [venueDetails, setVenueDetails] = useState<Record<string, VenueResult>>({});
   const [venueAloboBookedKeys, setVenueAloboBookedKeys] = useState<Record<string, Set<string>>>({});
+  const [venueLoading, setVenueLoading] = useState(false);
 
   useEffect(() => {
     if (coachId) {
@@ -219,7 +224,9 @@ export default function SessionBookingScreen() {
 
   useEffect(() => {
     if (!selectedDate || courts.length === 0) return;
+    let cancelled = false;
     const fetchPrices = async () => {
+      setVenueLoading(true);
       const prices: Record<string, number | null> = {};
       const venueById: Record<string, VenueResult> = {};
       const bookedByVenue: Record<string, Set<string>> = {};
@@ -244,12 +251,15 @@ export default function SessionBookingScreen() {
           bookedByVenue[c.venueId] = new Set();
         }
       }
+      if (cancelled) return;
       if (__DEV__) console.log('[session-booking] fetched prices:', prices);
       setVenueSlotPrices(prices);
       setVenueDetails(venueById);
       setVenueAloboBookedKeys(bookedByVenue);
+      setVenueLoading(false);
     };
     fetchPrices();
+    return () => { cancelled = true; };
   }, [selectedDate, courts]);
 
   const sessionType: '1on1' | 'group' = groupExtraPlayers > 0 ? 'group' : '1on1';
@@ -448,16 +458,23 @@ export default function SessionBookingScreen() {
         {selectedDate && selectedTime && courts.length > 0 && (
           <View style={styles.sectionWrap}>
             <SectionHeader title="Available Court" theme={t} />
-            {!hasAnyAvailableCourt && (
+            {venueLoading && (
+              <View style={styles.venueLoadingRow}>
+                <ActivityIndicator size="small" color={t.accent} />
+                <Text style={{ color: t.textSec, fontSize: 13 }}>Checking court availability…</Text>
+              </View>
+            )}
+            {!venueLoading && !hasAnyAvailableCourt && (
               <Text style={[styles.noSlots, { color: t.textMuted }]}>
                 No courts have open slots at this time. Try another time.
               </Text>
             )}
-            <View style={{ gap: spacing.sm }}>
+            <View style={{ gap: spacing.sm, opacity: venueLoading ? 0.4 : 1 }}>
               {courts.map((court) => {
                 const active = selectedVenueId === court.venueId;
                 const availability = venueAvailability[court.venueId];
                 const isAvailable = availability?.available ?? false;
+                const isHourOnlyConflict = availability?.hourOnlyConflict ?? false;
                 const dist = mapUserLoc && court.venueLat && court.venueLng
                   ? haversineKm(mapUserLoc.lat, mapUserLoc.lng, court.venueLat, court.venueLng)
                   : null;
@@ -472,7 +489,7 @@ export default function SessionBookingScreen() {
                       styles.courtCard,
                       {
                         backgroundColor: !isAvailable ? t.bg : active ? t.accentBgStrong : t.bgCard,
-                        borderColor: !isAvailable ? t.border : active ? t.accent : t.border,
+                        borderColor: isHourOnlyConflict ? '#4A2026' : !isAvailable ? t.border : active ? t.accent : t.border,
                         opacity: isAvailable ? 1 : 0.55,
                       },
                     ]}
@@ -493,39 +510,47 @@ export default function SessionBookingScreen() {
                         </View>
                       </View>
                     </View>
-                    <View style={styles.courtChips}>
-                      {courtCount > 0 && (
-                        <View style={[styles.courtChip, { backgroundColor: t.accentBg }]}>
-                          <Text style={[styles.courtChipText, { color: t.accent }]}>
-                            {courtCount} court{courtCount !== 1 ? 's' : ''}
-                          </Text>
-                        </View>
-                      )}
-                      <View
-                        style={[
-                          styles.courtChip,
-                          { backgroundColor: isAvailable ? t.accentBg : t.bgCard, borderWidth: 1, borderColor: isAvailable ? t.accent : t.border },
-                        ]}
-                      >
-                        <Text style={[styles.courtChipText, { color: isAvailable ? t.accent : t.textMuted }]}>
-                          {isAvailable ? 'Slot available' : 'No slot'}
+                    {isHourOnlyConflict ? (
+                      <View style={[styles.hourOnlyBanner, { backgroundColor: '#2B0D10', borderColor: '#4A2026' }]}>
+                        <Text style={{ fontSize: 12, color: '#FF7D7D', lineHeight: 16 }}>
+                          This venue only accepts per-hour bookings (1h, 2h). Select a different duration or another venue.
                         </Text>
                       </View>
-                      {slotPrice != null && slotPrice > 0 && (
-                        <View style={[styles.courtChip, { backgroundColor: t.accentBg }]}>
-                          <Text style={[styles.courtChipText, { color: t.accent }]}>
-                            {formatPrice(slotPrice)}/h
+                    ) : (
+                      <View style={styles.courtChips}>
+                        {courtCount > 0 && (
+                          <View style={[styles.courtChip, { backgroundColor: t.accentBg }]}>
+                            <Text style={[styles.courtChipText, { color: t.accent }]}>
+                              {courtCount} court{courtCount !== 1 ? 's' : ''}
+                            </Text>
+                          </View>
+                        )}
+                        <View
+                          style={[
+                            styles.courtChip,
+                            { backgroundColor: isAvailable ? t.accentBg : t.bgCard, borderWidth: 1, borderColor: isAvailable ? t.accent : t.border },
+                          ]}
+                        >
+                          <Text style={[styles.courtChipText, { color: isAvailable ? t.accent : t.textMuted }]}>
+                            {isAvailable ? 'Slot available' : 'No slot'}
                           </Text>
                         </View>
-                      )}
-                      {dist != null && (
-                        <View style={[styles.courtChip, { backgroundColor: t.bgCard, borderWidth: 1, borderColor: t.border }]}>
-                          <Text style={[styles.courtChipText, { color: t.textSec }]}>
-                            {dist.toFixed(1)} km
-                          </Text>
-                        </View>
-                      )}
-                    </View>
+                        {slotPrice != null && slotPrice > 0 && (
+                          <View style={[styles.courtChip, { backgroundColor: t.accentBg }]}>
+                            <Text style={[styles.courtChipText, { color: t.accent }]}>
+                              {formatPrice(slotPrice)}/h
+                            </Text>
+                          </View>
+                        )}
+                        {dist != null && (
+                          <View style={[styles.courtChip, { backgroundColor: t.bgCard, borderWidth: 1, borderColor: t.border }]}>
+                            <Text style={[styles.courtChipText, { color: t.textSec }]}>
+                              {dist.toFixed(1)} km
+                            </Text>
+                          </View>
+                        )}
+                      </View>
+                    )}
                   </Pressable>
                 );
               })}
@@ -726,6 +751,8 @@ const styles = StyleSheet.create({
   courtChips: { flexDirection: 'row', gap: spacing.sm, marginTop: spacing.sm },
   courtChip: { paddingVertical: 3, paddingHorizontal: 10, borderRadius: 20 },
   courtChipText: { fontSize: fontSize.xs, fontWeight: '700' },
+  hourOnlyBanner: { marginTop: spacing.sm, borderWidth: 1, borderRadius: 10, paddingVertical: 8, paddingHorizontal: 10 },
+  venueLoadingRow: { flexDirection: 'row', alignItems: 'center', gap: 8, marginBottom: spacing.sm },
 
   typeRow: { flexDirection: 'row', gap: spacing.md, marginTop: spacing.md },
   typeCard: { flex: 1, padding: spacing.lg, borderRadius: borderRadius.md, borderWidth: 1.5 },

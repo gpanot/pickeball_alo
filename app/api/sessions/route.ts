@@ -134,7 +134,7 @@ export async function POST(req: NextRequest) {
   }
 
   // Validate coach availability covers the requested slot
-  const dayOfWeek = new Date(`${date}T00:00:00+07:00`).getDay();
+  const dayOfWeek = new Date(`${date}T12:00:00+07:00`).getUTCDay();
   const availability = await prisma.coachAvailability.findMany({
     where: {
       coachId,
