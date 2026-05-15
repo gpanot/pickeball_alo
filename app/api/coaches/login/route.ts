@@ -77,6 +77,12 @@ export async function POST(req: NextRequest) {
         isActive: coach.isActive,
         phoneVerified: coach.phoneVerified,
         gender: coach.gender,
+        bankName: coach.bankName,
+        bankAccountName: coach.bankAccountName,
+        bankAccountNumber: coach.bankAccountNumber,
+        bankBin: coach.bankBin,
+        autoApprovalPhone: coach.autoApprovalPhone,
+        autoApprovalCCCD: coach.autoApprovalCCCD,
       },
     });
   } catch (err) {

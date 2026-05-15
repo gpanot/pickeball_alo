@@ -278,6 +278,7 @@ export default function BuyCreditPackScreen() {
                 bankName={coach.bankName!}
                 bankAccountName={coach.bankAccountName!}
                 bankAccountNumber={coach.bankAccountNumber!}
+                bankBin={coach.bankBin}
                 amount={selectedPack.price}
                 memo={transferMemo}
                 onPaid={onPaid}

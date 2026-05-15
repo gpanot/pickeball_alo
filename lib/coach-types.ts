@@ -31,6 +31,8 @@ export interface CoachResult {
   bankAccountName: string | null;
   bankAccountNumber: string | null;
   bankBin: string | null;
+  autoApprovalPhone: string | null;
+  autoApprovalCCCD: string | null;
   phoneVerified?: boolean;
   gender?: string | null;
   courts?: CoachCourtLinkResult[];

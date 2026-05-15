@@ -132,7 +132,8 @@ function useCourtMapInner() {
     segments.includes('results-map') ||
     segments.includes('map') ||
     segments.includes('coach-profile') ||
-    segments.includes('session-booking');
+    segments.includes('session-booking') ||
+    segments.includes('session-detail');
   /** Do not hide tab bar for the venue modal: hiding it shrinks the tab content and the map reflows/jumps. The modal covers the bar visually. */
   const hideTabBar =
     hideTabBarForBookStack || (segments.includes('saved') && savedViaResultsFlow);

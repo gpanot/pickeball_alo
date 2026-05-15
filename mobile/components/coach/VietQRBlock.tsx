@@ -1,5 +1,5 @@
-import React, { useCallback, useEffect, useRef, useState } from 'react';
-import { View, Text, Pressable, StyleSheet } from 'react-native';
+import React, { useCallback, useEffect, useMemo, useRef, useState } from 'react';
+import { View, Text, Pressable, Image, StyleSheet } from 'react-native';
 import * as Clipboard from 'expo-clipboard';
 import { spacing, fontSize, borderRadius, type ThemeTokens } from '@/mobile/lib/theme';
 import { formatVndFull } from '@/mobile/lib/formatters';
@@ -8,22 +8,40 @@ export type VietQRBlockProps = {
   bankName: string;
   bankAccountName: string;
   bankAccountNumber: string;
+  bankBin?: string | null;
   amount: number;
   memo: string;
   onPaid: () => void;
   theme: ThemeTokens;
 };
 
+function buildCoachQrUrl(p: {
+  bankBin: string;
+  accountNumber: string;
+  accountName: string;
+  amount: number;
+  memo: string;
+}): string {
+  const addInfo = encodeURIComponent(p.memo.slice(0, 50));
+  const accountName = encodeURIComponent(p.accountName.trim());
+  const bin = p.bankBin.trim();
+  const acct = p.accountNumber.trim();
+  const amount = Math.max(0, Math.round(p.amount));
+  return `https://img.vietqr.io/image/${bin}-${acct}-compact.png?amount=${amount}&addInfo=${addInfo}&accountName=${accountName}`;
+}
+
 export function VietQRBlock({
   bankName,
   bankAccountName,
   bankAccountNumber,
+  bankBin,
   amount,
   memo,
   onPaid,
   theme,
 }: VietQRBlockProps) {
   const [copiedField, setCopiedField] = useState<'account' | 'memo' | null>(null);
+  const [qrError, setQrError] = useState(false);
   const copyTimerRef = useRef<ReturnType<typeof setTimeout> | null>(null);
 
   useEffect(() => {
@@ -31,6 +49,21 @@ export function VietQRBlock({
       if (copyTimerRef.current) clearTimeout(copyTimerRef.current);
     };
   }, []);
+
+  useEffect(() => {
+    setQrError(false);
+  }, [bankBin, bankAccountNumber, amount, memo]);
+
+  const qrUrl = useMemo(() => {
+    if (!bankBin?.trim() || !bankAccountNumber?.trim()) return null;
+    return buildCoachQrUrl({
+      bankBin,
+      accountNumber: bankAccountNumber,
+      accountName: bankAccountName,
+      amount,
+      memo,
+    });
+  }, [bankBin, bankAccountNumber, bankAccountName, amount, memo]);
 
   const flashCopied = useCallback((field: 'account' | 'memo') => {
     if (copyTimerRef.current) clearTimeout(copyTimerRef.current);
@@ -53,6 +86,23 @@ export function VietQRBlock({
 
   return (
     <View style={[styles.card, { backgroundColor: theme.bgCard, borderColor: theme.border }]}>
+      {qrUrl && !qrError ? (
+        <View style={styles.qrSection}>
+          <View style={styles.qrWhite}>
+            <Image
+              source={{ uri: qrUrl }}
+              style={styles.qrImage}
+              resizeMode="contain"
+              onError={() => setQrError(true)}
+              accessibilityLabel="VietQR payment code"
+            />
+          </View>
+          <Text style={[styles.qrHint, { color: theme.textMuted }]}>
+            Scan with your banking app
+          </Text>
+        </View>
+      ) : null}
+
       <Text style={[styles.label, { color: theme.textSec }]}>Bank</Text>
       <Text style={[styles.value, { color: theme.text }]}>{bankName}</Text>
 
@@ -116,6 +166,26 @@ const styles = StyleSheet.create({
     borderWidth: 1,
     borderRadius: borderRadius.lg,
     padding: spacing.lg,
+  },
+  qrSection: {
+    alignItems: 'center',
+    marginBottom: spacing.lg,
+    paddingBottom: spacing.lg,
+    borderBottomWidth: StyleSheet.hairlineWidth,
+    borderBottomColor: 'rgba(255,255,255,0.08)',
+  },
+  qrWhite: {
+    backgroundColor: '#fff',
+    borderRadius: borderRadius.md,
+    padding: 8,
+  },
+  qrImage: {
+    width: 200,
+    height: 200,
+  },
+  qrHint: {
+    fontSize: fontSize.xs,
+    marginTop: spacing.sm,
   },
   label: {
     fontSize: fontSize.xs,

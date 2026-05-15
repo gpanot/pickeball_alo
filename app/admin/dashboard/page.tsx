@@ -6,30 +6,13 @@ import { darkTheme } from '@/lib/theme';
 import { readAdminSession, clearAdminSession } from '@/lib/admin-storage';
 import { adminAuthHeaders, withVenueQuery } from '@/lib/admin-api';
 import type { BookingResult, VenueResult } from '@/lib/types';
+import { formatDateShort, formatVndFull, toLocalDateKey } from '@/lib/formatters';
 import {
-  formatBookingOrderRef,
-  formatDateShort,
-  formatVndFull,
-  toLocalDateKey,
-} from '@/lib/formatters';
+  BookingCardCompact,
+  type ProofModalState,
+} from '../components/BookingCardCompact';
 
 const t = darkTheme;
-
-function formatRelativeTime(iso: string): string {
-  const sec = Math.floor((Date.now() - new Date(iso).getTime()) / 1000);
-  if (sec < 10) return 'just now';
-  if (sec < 60) return `${sec}s ago`;
-  const min = Math.floor(sec / 60);
-  if (min < 60) return `${min} min ago`;
-  const h = Math.floor(min / 60);
-  if (h < 24) return `${h}h ago`;
-  return `${Math.floor(h / 24)}d ago`;
-}
-
-function slotSummary(slots: { courtName?: string; time?: string }[]): string {
-  if (!slots?.length) return '—';
-  return slots.map((s) => `${s.courtName ?? '?'} ${s.time ?? ''}`).join(', ');
-}
 
 export default function AdminDashboardPage() {
   const router = useRouter();
@@ -48,9 +31,8 @@ export default function AdminDashboardPage() {
   const [venue, setVenue] = useState<VenueResult | null>(null);
   const [rejectId, setRejectId] = useState<string | null>(null);
   const [rejectNote, setRejectNote] = useState('');
-  const [notReceivedId, setNotReceivedId] = useState<string | null>(null);
-  const [notReceivedNote, setNotReceivedNote] = useState('');
   const [busyId, setBusyId] = useState<string | null>(null);
+  const [proofModal, setProofModal] = useState<ProofModalState>(null);
 
   const handleAuthFail = useCallback(() => {
     clearAdminSession();
@@ -69,26 +51,14 @@ export default function AdminDashboardPage() {
       .then((d) => d && setStats(d))
       .catch(() => setStats(null));
 
-    fetch(withVenueQuery('/api/admin/bookings', vId) + '&status=payment_submitted', {
-      headers: adminAuthHeaders(token),
-    })
+    fetch(withVenueQuery('/api/admin/bookings', vId) + '&status=payment_submitted', { headers: adminAuthHeaders(token) })
       .then((r) => { if (!r.ok) throw new Error(); return r.json(); })
-      .then((rows: BookingResult[]) =>
-        setPaymentSubmitted(
-          Array.isArray(rows) ? rows.sort((a, b) => +new Date(b.createdAt) - +new Date(a.createdAt)) : [],
-        ),
-      )
+      .then((rows: BookingResult[]) => setPaymentSubmitted(Array.isArray(rows) ? rows.sort((a, b) => +new Date(b.createdAt) - +new Date(a.createdAt)) : []))
       .catch(() => setPaymentSubmitted([]));
 
-    fetch(withVenueQuery('/api/admin/bookings', vId) + '&status=pending', {
-      headers: adminAuthHeaders(token),
-    })
+    fetch(withVenueQuery('/api/admin/bookings', vId) + '&status=pending', { headers: adminAuthHeaders(token) })
       .then((r) => { if (!r.ok) throw new Error(); return r.json(); })
-      .then((rows: BookingResult[]) =>
-        setPendingNew(
-          Array.isArray(rows) ? rows.sort((a, b) => +new Date(b.createdAt) - +new Date(a.createdAt)) : [],
-        ),
-      )
+      .then((rows: BookingResult[]) => setPendingNew(Array.isArray(rows) ? rows.sort((a, b) => +new Date(b.createdAt) - +new Date(a.createdAt)) : []))
       .catch(() => setPendingNew([]));
 
     const today = toLocalDateKey(new Date());
@@ -98,18 +68,14 @@ export default function AdminDashboardPage() {
       .catch(() => setVenue(null));
   }, [handleAuthFail]);
 
-  useEffect(() => {
-    load();
-  }, [load]);
+  useEffect(() => { load(); }, [load]);
 
   const todayLabel = useMemo(() => formatDateShort(new Date()), []);
 
   const times = useMemo(() => {
     if (!venue?.courts?.length) return [];
     const set = new Set<string>();
-    for (const c of venue.courts) {
-      for (const s of c.slots) set.add(s.time);
-    }
+    for (const c of venue.courts) for (const s of c.slots) set.add(s.time);
     return [...set].sort((a, b) => a.localeCompare(b));
   }, [venue]);
 
@@ -125,425 +91,99 @@ export default function AdminDashboardPage() {
       });
       if (!res.ok) throw new Error();
       load();
-    } catch {
-      alert('Update failed');
-    } finally {
-      setBusyId(null);
-      setRejectId(null);
-      setRejectNote('');
-      setNotReceivedId(null);
-      setNotReceivedNote('');
-    }
+    } catch { alert('Update failed'); }
+    finally { setBusyId(null); setRejectId(null); setRejectNote(''); }
   };
 
   if (!session) return null;
 
   return (
     <div>
-      <h1 style={{ margin: '0 0 8px', fontSize: 22 }}>Dashboard</h1>
-      <div style={{ marginBottom: 16, fontSize: 13, color: t.textSec }}>{todayLabel}</div>
+      <div style={{ display: 'flex', alignItems: 'baseline', gap: 12, marginBottom: 16 }}>
+        <h1 style={{ margin: 0, fontSize: 20, fontWeight: 700 }}>Dashboard</h1>
+        <span style={{ fontSize: 13, color: t.textSec }}>{todayLabel}</span>
+      </div>
 
-      <div
-        style={{
-          display: 'flex',
-          gap: 10,
-          overflowX: 'auto',
-          marginBottom: 20,
-          WebkitOverflowScrolling: 'touch',
-        }}
-      >
+      {/* Stats */}
+      <div style={{ display: 'grid', gridTemplateColumns: 'repeat(auto-fit, minmax(100px, 1fr))', gap: 8, marginBottom: 20 }}>
         {[
           { label: 'Pending pay', value: stats?.pendingCount ?? '—', color: t.orange },
-          {
-            label: 'Verify pay',
-            value: stats?.paymentSubmittedCount ?? '—',
-            color: '#E8C547',
-          },
+          { label: 'Verify pay', value: stats?.paymentSubmittedCount ?? '—', color: '#E8C547' },
           { label: 'Paid today', value: stats?.confirmedToday ?? '—', color: t.green },
-          {
-            label: 'Revenue today',
-            value: stats ? formatVndFull(stats.revenueToday) : '—',
-            color: t.accent,
-          },
-          {
-            label: 'Courts active',
-            value: stats ? `${stats.courtsActive} / ${stats.courtsTotal}` : '—',
-            color: t.blue,
-          },
+          { label: 'Revenue', value: stats ? formatVndFull(stats.revenueToday) : '—', color: t.accent },
+          { label: 'Courts', value: stats ? `${stats.courtsActive}/${stats.courtsTotal}` : '—', color: t.blue },
         ].map((c) => (
-          <div
-            key={c.label}
-            style={{
-              flex: '0 0 auto',
-              minWidth: 120,
-              background: t.bgCard,
-              border: `1px solid ${t.border}`,
-              borderRadius: 12,
-              padding: 12,
-            }}
-          >
-            <div style={{ fontSize: 11, color: t.textMuted, marginBottom: 6 }}>{c.label}</div>
+          <div key={c.label} style={{ background: t.bgCard, border: `1px solid ${t.border}`, borderRadius: 10, padding: '10px 12px' }}>
+            <div style={{ fontSize: 10, color: t.textMuted, marginBottom: 4, textTransform: 'uppercase', letterSpacing: 0.3, fontWeight: 600 }}>{c.label}</div>
             <div style={{ fontSize: 16, fontWeight: 700, color: c.color }}>{c.value}</div>
           </div>
         ))}
       </div>
 
-      <section style={{ marginBottom: 24 }}>
-        <div style={{ display: 'flex', alignItems: 'center', gap: 8, marginBottom: 12 }}>
-          <h2 style={{ margin: 0, fontSize: 17 }}>Verify payment</h2>
-          <span
-            style={{
-              background: '#E8C547',
-              color: '#000',
-              fontSize: 12,
-              fontWeight: 700,
-              padding: '2px 8px',
-              borderRadius: 8,
-            }}
-          >
-            {paymentSubmitted.length}
-          </span>
+      {/* Verify payment */}
+      <section style={{ marginBottom: 20 }}>
+        <div style={{ display: 'flex', alignItems: 'center', gap: 8, marginBottom: 8 }}>
+          <h2 style={{ margin: 0, fontSize: 15, fontWeight: 700 }}>Verify payment</h2>
+          <span style={{ background: '#E8C547', color: '#000', fontSize: 11, fontWeight: 700, padding: '1px 7px', borderRadius: 6 }}>{paymentSubmitted.length}</span>
         </div>
-        <p style={{ margin: '0 0 12px', fontSize: 13, color: t.textSec }}>
-          Player marked “I&apos;ve paid”. Check your bank, then confirm or send back to pending.
-        </p>
+        <p style={{ margin: '0 0 8px', fontSize: 12, color: t.textSec }}>Player marked &quot;I&apos;ve paid&quot;. Check your bank, then confirm or send back to pending.</p>
         {paymentSubmitted.length === 0 ? (
-          <div style={{ color: t.textSec, fontSize: 14 }}>No bookings awaiting payment verification.</div>
+          <div style={{ color: t.textMuted, fontSize: 13 }}>No bookings awaiting verification.</div>
         ) : (
-          <div style={{ display: 'flex', flexDirection: 'column', gap: 12 }}>
+          <div style={{ display: 'flex', flexDirection: 'column', gap: 6 }}>
             {paymentSubmitted.map((b) => (
-              <div
-                key={b.id}
-                style={{
-                  background: t.bgCard,
-                  border: `1px solid ${t.border}`,
-                  borderRadius: 12,
-                  padding: 14,
-                }}
-              >
-                <div style={{ fontWeight: 800, marginBottom: 6 }}>{formatBookingOrderRef(b.orderId)}</div>
-                <div style={{ fontSize: 15, marginBottom: 4 }}>{b.userName}</div>
-                <a href={`tel:${b.userPhone}`} style={{ color: t.blue, fontSize: 14 }}>
-                  {b.userPhone}
-                </a>
-                <div style={{ fontSize: 13, color: t.textSec, marginTop: 8 }}>
-                  {slotSummary(b.slots as { courtName?: string; time?: string }[])}
-                </div>
-                <div style={{ fontSize: 13, color: t.textSec, marginTop: 4 }}>
-                  {formatVndFull(b.totalPrice)} · submitted {b.paymentSubmittedAt ? formatRelativeTime(b.paymentSubmittedAt) : '—'}
-                </div>
-                {notReceivedId === b.id ? (
-                  <div style={{ marginTop: 12 }}>
-                    <textarea
-                      value={notReceivedNote}
-                      onChange={(e) => setNotReceivedNote(e.target.value)}
-                      placeholder="Note (optional, e.g. transfer not found)"
-                      rows={2}
-                      style={{
-                        width: '100%',
-                        boxSizing: 'border-box',
-                        borderRadius: 8,
-                        border: `1px solid ${t.border}`,
-                        background: t.bgInput,
-                        color: t.text,
-                        padding: 8,
-                        fontFamily: 'inherit',
-                        marginBottom: 8,
-                      }}
-                    />
-                    <div style={{ display: 'flex', gap: 8 }}>
-                      <button
-                        type="button"
-                        disabled={busyId === b.id}
-                        onClick={() =>
-                          patchBooking(b.id, { status: 'pending', paymentNote: notReceivedNote })
-                        }
-                        style={{
-                          flex: 1,
-                          padding: 10,
-                          borderRadius: 8,
-                          border: 'none',
-                          background: t.orange,
-                          color: '#000',
-                          fontWeight: 600,
-                          cursor: 'pointer',
-                          fontFamily: 'inherit',
-                        }}
-                      >
-                        Confirm not received
-                      </button>
-                      <button
-                        type="button"
-                        onClick={() => {
-                          setNotReceivedId(null);
-                          setNotReceivedNote('');
-                        }}
-                        style={{
-                          padding: '10px 14px',
-                          borderRadius: 8,
-                          border: `1px solid ${t.border}`,
-                          background: 'transparent',
-                          color: t.textSec,
-                          fontFamily: 'inherit',
-                        }}
-                      >
-                        Cancel
-                      </button>
-                    </div>
-                  </div>
-                ) : (
-                  <div style={{ display: 'flex', gap: 8, marginTop: 12 }}>
-                    <button
-                      type="button"
-                      disabled={busyId === b.id}
-                      onClick={() => patchBooking(b.id, { status: 'paid' })}
-                      style={{
-                        flex: 1,
-                        padding: 10,
-                        borderRadius: 8,
-                        border: 'none',
-                        background: t.green,
-                        color: '#fff',
-                        fontWeight: 600,
-                        cursor: 'pointer',
-                        fontFamily: 'inherit',
-                      }}
-                    >
-                      Confirm paid
-                    </button>
-                    <button
-                      type="button"
-                      disabled={busyId === b.id}
-                      onClick={() => setNotReceivedId(b.id)}
-                      style={{
-                        flex: 1,
-                        padding: 10,
-                        borderRadius: 8,
-                        border: 'none',
-                        background: t.orange,
-                        color: '#000',
-                        fontWeight: 600,
-                        cursor: 'pointer',
-                        fontFamily: 'inherit',
-                      }}
-                    >
-                      Not received
-                    </button>
-                  </div>
-                )}
-              </div>
+              <BookingCardCompact key={b.id} b={b} busyId={busyId} rejectId={rejectId} rejectNote={rejectNote}
+                onRejectNote={setRejectNote} onRejectId={setRejectId} onPatch={patchBooking} onProof={setProofModal} showDate={false} />
             ))}
           </div>
         )}
       </section>
 
-      <section style={{ marginBottom: 24 }}>
-        <div style={{ display: 'flex', alignItems: 'center', gap: 8, marginBottom: 12 }}>
-          <h2 style={{ margin: 0, fontSize: 17 }}>New requests</h2>
-          <span
-            style={{
-              background: t.orange,
-              color: '#000',
-              fontSize: 12,
-              fontWeight: 700,
-              padding: '2px 8px',
-              borderRadius: 8,
-            }}
-          >
-            {pendingNew.length}
-          </span>
+      {/* New requests */}
+      <section style={{ marginBottom: 20 }}>
+        <div style={{ display: 'flex', alignItems: 'center', gap: 8, marginBottom: 8 }}>
+          <h2 style={{ margin: 0, fontSize: 15, fontWeight: 700 }}>New requests</h2>
+          <span style={{ background: t.orange, color: '#000', fontSize: 11, fontWeight: 700, padding: '1px 7px', borderRadius: 6 }}>{pendingNew.length}</span>
         </div>
-        <p style={{ margin: '0 0 12px', fontSize: 13, color: t.textSec }}>
-          Awaiting player payment. Reject if you cannot host the booking.
-        </p>
+        <p style={{ margin: '0 0 8px', fontSize: 12, color: t.textSec }}>Awaiting player payment. Reject if you cannot host the booking.</p>
         {pendingNew.length === 0 ? (
-          <div style={{ color: t.textSec, fontSize: 14 }}>No new unpaid requests.</div>
+          <div style={{ color: t.textMuted, fontSize: 13 }}>No new unpaid requests.</div>
         ) : (
-          <div style={{ display: 'flex', flexDirection: 'column', gap: 12 }}>
+          <div style={{ display: 'flex', flexDirection: 'column', gap: 6 }}>
             {pendingNew.map((b) => (
-              <div
-                key={b.id}
-                style={{
-                  background: t.bgCard,
-                  border: `1px solid ${t.border}`,
-                  borderRadius: 12,
-                  padding: 14,
-                }}
-              >
-                <div style={{ fontWeight: 800, marginBottom: 6 }}>{formatBookingOrderRef(b.orderId)}</div>
-                <div style={{ fontSize: 15, marginBottom: 4 }}>{b.userName}</div>
-                <a href={`tel:${b.userPhone}`} style={{ color: t.blue, fontSize: 14 }}>
-                  {b.userPhone}
-                </a>
-                <div style={{ fontSize: 13, color: t.textSec, marginTop: 8 }}>
-                  {slotSummary(b.slots as { courtName?: string; time?: string }[])}
-                </div>
-                <div style={{ fontSize: 13, color: t.textSec, marginTop: 4 }}>
-                  {formatVndFull(b.totalPrice)} · {formatRelativeTime(b.createdAt)}
-                </div>
-                {rejectId === b.id ? (
-                  <div style={{ marginTop: 12 }}>
-                    <textarea
-                      value={rejectNote}
-                      onChange={(e) => setRejectNote(e.target.value)}
-                      placeholder="Reason (optional)"
-                      rows={2}
-                      style={{
-                        width: '100%',
-                        boxSizing: 'border-box',
-                        borderRadius: 8,
-                        border: `1px solid ${t.border}`,
-                        background: t.bgInput,
-                        color: t.text,
-                        padding: 8,
-                        fontFamily: 'inherit',
-                        marginBottom: 8,
-                      }}
-                    />
-                    <div style={{ display: 'flex', gap: 8 }}>
-                      <button
-                        type="button"
-                        disabled={busyId === b.id}
-                        onClick={() =>
-                          patchBooking(b.id, { status: 'canceled', adminNote: rejectNote })
-                        }
-                        style={{
-                          flex: 1,
-                          padding: 10,
-                          borderRadius: 8,
-                          border: 'none',
-                          background: t.red,
-                          color: '#fff',
-                          fontWeight: 600,
-                          cursor: 'pointer',
-                          fontFamily: 'inherit',
-                        }}
-                      >
-                        Confirm reject
-                      </button>
-                      <button
-                        type="button"
-                        onClick={() => {
-                          setRejectId(null);
-                          setRejectNote('');
-                        }}
-                        style={{
-                          padding: '10px 14px',
-                          borderRadius: 8,
-                          border: `1px solid ${t.border}`,
-                          background: 'transparent',
-                          color: t.textSec,
-                          fontFamily: 'inherit',
-                        }}
-                      >
-                        Cancel
-                      </button>
-                    </div>
-                  </div>
-                ) : (
-                  <div style={{ display: 'flex', gap: 8, marginTop: 12 }}>
-                    <button
-                      type="button"
-                      disabled={busyId === b.id}
-                      onClick={() => setRejectId(b.id)}
-                      style={{
-                        flex: 1,
-                        padding: 10,
-                        borderRadius: 8,
-                        border: 'none',
-                        background: t.red,
-                        color: '#fff',
-                        fontWeight: 600,
-                        cursor: 'pointer',
-                        fontFamily: 'inherit',
-                      }}
-                    >
-                      Reject
-                    </button>
-                  </div>
-                )}
-              </div>
+              <BookingCardCompact key={b.id} b={b} busyId={busyId} rejectId={rejectId} rejectNote={rejectNote}
+                onRejectNote={setRejectNote} onRejectId={setRejectId} onPatch={patchBooking} showDate={false} />
             ))}
           </div>
         )}
       </section>
 
+      {/* Today's courts */}
       <section style={{ marginBottom: 24 }}>
-        <h2 style={{ margin: '0 0 12px', fontSize: 17 }}>Today&apos;s courts</h2>
+        <h2 style={{ margin: '0 0 8px', fontSize: 15, fontWeight: 700 }}>Today&apos;s courts</h2>
         {!venue ? (
-          <div style={{ color: t.textSec }}>Loading schedule…</div>
+          <div style={{ color: t.textSec, fontSize: 13 }}>Loading schedule…</div>
         ) : (
           <div style={{ overflowX: 'auto' }}>
             <table style={{ borderCollapse: 'collapse', fontSize: 11, minWidth: '100%' }}>
               <thead>
                 <tr>
-                  <th
-                    style={{
-                      textAlign: 'left',
-                      padding: 6,
-                      borderBottom: `1px solid ${t.border}`,
-                      color: t.textMuted,
-                    }}
-                  >
-                    Court
-                  </th>
+                  <th style={{ textAlign: 'left', padding: '4px 6px', borderBottom: `1px solid ${t.border}`, color: t.textMuted, fontSize: 10 }}>Court</th>
                   {times.map((time) => (
-                    <th
-                      key={time}
-                      style={{
-                        padding: 6,
-                        borderBottom: `1px solid ${t.border}`,
-                        color: t.textMuted,
-                        whiteSpace: 'nowrap',
-                      }}
-                    >
-                      {time}
-                    </th>
+                    <th key={time} style={{ padding: '4px 3px', borderBottom: `1px solid ${t.border}`, color: t.textMuted, whiteSpace: 'nowrap', fontSize: 9 }}>{time}</th>
                   ))}
                 </tr>
               </thead>
               <tbody>
                 {venue.courts.map((c) => (
                   <tr key={c.id}>
-                    <td
-                      style={{
-                        padding: 6,
-                        borderBottom: `1px solid ${t.border}`,
-                        fontWeight: 600,
-                        maxWidth: 72,
-                        wordBreak: 'break-word',
-                      }}
-                    >
-                      {c.name}
-                    </td>
+                    <td style={{ padding: '4px 6px', borderBottom: `1px solid ${t.border}`, fontWeight: 600, maxWidth: 60, wordBreak: 'break-word', fontSize: 11 }}>{c.name}</td>
                     {times.map((time) => {
                       const slot = c.slots.find((s) => s.time === time);
-                      const bg = !c.isAvailable
-                        ? t.red
-                        : !slot
-                          ? t.border
-                          : slot.isBooked
-                            ? t.accent
-                            : t.green;
+                      const bg = !c.isAvailable ? t.red : !slot ? t.border : slot.isBooked ? t.accent : t.green;
                       return (
-                        <td
-                          key={time}
-                          style={{
-                            padding: 4,
-                            borderBottom: `1px solid ${t.border}`,
-                            textAlign: 'center',
-                          }}
-                        >
-                          <div
-                            style={{
-                              width: 10,
-                              height: 10,
-                              borderRadius: 2,
-                              margin: '0 auto',
-                              background: bg,
-                              opacity: slot ? 1 : 0.25,
-                            }}
-                          />
+                        <td key={time} style={{ padding: 2, borderBottom: `1px solid ${t.border}`, textAlign: 'center' }}>
+                          <div style={{ width: 8, height: 8, borderRadius: 2, margin: '0 auto', background: bg, opacity: slot ? 1 : 0.25 }} />
                         </td>
                       );
                     })}
@@ -551,13 +191,21 @@ export default function AdminDashboardPage() {
                 ))}
               </tbody>
             </table>
-            <div style={{ fontSize: 11, color: t.textMuted, marginTop: 8 }}>
-              Green = free · Lime = booked · Red = maintenance
-            </div>
+            <div style={{ fontSize: 10, color: t.textMuted, marginTop: 6 }}>Green = free · Lime = booked · Red = maintenance</div>
           </div>
         )}
       </section>
 
+      {/* Proof modal */}
+      {proofModal && (
+        <div style={{ position: 'fixed', inset: 0, zIndex: 300, background: 'rgba(0,0,0,0.8)', display: 'flex', alignItems: 'center', justifyContent: 'center', cursor: 'pointer' }} onClick={() => setProofModal(null)}>
+          <div style={{ position: 'relative', maxWidth: '90vw', maxHeight: '90vh' }}>
+            <div style={{ color: '#fff', fontSize: 14, fontWeight: 700, textAlign: 'center', marginBottom: 8 }}>Payment proof — {proofModal.orderRef}</div>
+            <img src={proofModal.url} alt="Payment proof" style={{ maxWidth: '90vw', maxHeight: '80vh', objectFit: 'contain', borderRadius: 8 }} />
+            <button type="button" onClick={() => setProofModal(null)} style={{ position: 'absolute', top: -8, right: -8, width: 32, height: 32, borderRadius: 16, border: 'none', background: '#fff', color: '#000', fontWeight: 900, fontSize: 18, cursor: 'pointer', fontFamily: 'inherit' }}>×</button>
+          </div>
+        </div>
+      )}
     </div>
   );
 }

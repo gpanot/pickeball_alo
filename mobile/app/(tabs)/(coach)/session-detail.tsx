@@ -186,14 +186,20 @@ export default function SessionDetailScreen() {
 
   return (
     <SafeAreaView style={[styles.safe, { backgroundColor: t.bg }]} edges={['top', 'left', 'right']}>
-      <View style={styles.headerRow}>
+      <View style={[styles.topBar, { borderBottomColor: t.border }]}>
         <Pressable
           onPress={() => router.back()}
           hitSlop={12}
-          style={({ pressed }) => [styles.backBtn, { opacity: pressed ? 0.7 : 1 }]}
+          style={({ pressed }) => [styles.topBarClose, { opacity: pressed ? 0.7 : 1 }]}
+          accessibilityRole="button"
+          accessibilityLabel="Close"
         >
-          <Text style={[styles.backText, { color: t.accent }]}>Back</Text>
+          <Text style={[styles.topBarCloseText, { color: t.accent }]}>Close</Text>
         </Pressable>
+        <Text style={[styles.topBarTitle, { color: t.text }]} numberOfLines={1}>
+          Session details
+        </Text>
+        <View style={styles.topBarSpacer} />
       </View>
 
       {!sessionId ? (
@@ -417,19 +423,32 @@ const styles = StyleSheet.create({
   safe: {
     flex: 1,
   },
-  headerRow: {
+  topBar: {
     flexDirection: 'row',
     alignItems: 'center',
+    justifyContent: 'space-between',
     paddingHorizontal: spacing.lg,
-    paddingBottom: spacing.sm,
+    paddingVertical: spacing.sm,
+    borderBottomWidth: StyleSheet.hairlineWidth,
+    minHeight: 44,
   },
-  backBtn: {
+  topBarClose: {
+    minWidth: 64,
     paddingVertical: spacing.xs,
-    paddingRight: spacing.md,
   },
-  backText: {
+  topBarCloseText: {
     fontSize: fontSize.md,
     fontWeight: '600',
+  },
+  topBarTitle: {
+    flex: 1,
+    textAlign: 'center',
+    fontSize: fontSize.lg,
+    fontWeight: '800',
+    letterSpacing: -0.3,
+  },
+  topBarSpacer: {
+    minWidth: 64,
   },
   scrollContent: {
     paddingHorizontal: spacing.lg,

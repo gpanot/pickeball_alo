@@ -4,6 +4,7 @@ import {
   Text,
   Pressable,
   ScrollView,
+  FlatList,
   TextInput,
   StyleSheet,
   ActivityIndicator,
@@ -28,8 +29,14 @@ import {
   deleteCreditPack,
 } from '@/mobile/lib/coach-api';
 import { formatVndFull } from '@/lib/formatters';
+import { VIETNAM_BANKS } from '@/lib/vietnam-banks';
 import type { CreditPackResult } from '@/mobile/lib/coach-types';
 import PhoneFieldVerificationSection from '@/components/PhoneFieldVerificationSection';
+
+function bankNameForBin(bin: string | null | undefined): string {
+  if (!bin) return '';
+  return VIETNAM_BANKS.find((b) => b.bin === bin)?.name ?? bin;
+}
 
 const LANGUAGE_OPTIONS = ['English', 'Vietnamese', 'Japanese', 'Thai'] as const;
 const SPECIALTY_OPTIONS = ['Pickleball', 'Tennis', 'Badminton'] as const;
@@ -88,6 +95,14 @@ export default function CoachProfileSettingsScreen() {
   const [hourlyGroup, setHourlyGroup] = useState('');
   const [isProfilePublic, setIsProfilePublic] = useState(true);
 
+  // Bank & payment state
+  const [bankBin, setBankBin] = useState<string | null>(null);
+  const [bankAccountNumber, setBankAccountNumber] = useState('');
+  const [bankAccountName, setBankAccountName] = useState('');
+  const [autoApprovalPhone, setAutoApprovalPhone] = useState('');
+  const [autoApprovalCCCD, setAutoApprovalCCCD] = useState('');
+  const [bankPickerVisible, setBankPickerVisible] = useState(false);
+
   // Amount input modal
   const [amountModalTarget, setAmountModalTarget] = useState<AmountModalTarget>(null);
   const [amountModalValue, setAmountModalValue] = useState('');
@@ -120,6 +135,11 @@ export default function CoachProfileSettingsScreen() {
     setHourly1((coach.hourlyRate1on1 ?? 0).toLocaleString('en-US'));
     setHourlyGroup(coach.hourlyRateGroup != null ? coach.hourlyRateGroup.toLocaleString('en-US') : '');
     setIsProfilePublic(coach.isProfilePublic ?? true);
+    setBankBin(coach.bankBin ?? null);
+    setBankAccountNumber(coach.bankAccountNumber ?? '');
+    setBankAccountName(coach.bankAccountName ?? '');
+    setAutoApprovalPhone(coach.autoApprovalPhone ?? '');
+    setAutoApprovalCCCD(coach.autoApprovalCCCD ?? '');
   }, [coach]);
 
   useEffect(() => {
@@ -180,6 +200,11 @@ export default function CoachProfileSettingsScreen() {
       hourly1: (coach.hourlyRate1on1 ?? 0).toLocaleString('en-US'),
       hourlyGroup: coach.hourlyRateGroup != null ? coach.hourlyRateGroup.toLocaleString('en-US') : '',
       isProfilePublic: coach.isProfilePublic ?? true,
+      bankBin: coach.bankBin ?? null,
+      bankAccountNumber: coach.bankAccountNumber ?? '',
+      bankAccountName: coach.bankAccountName ?? '',
+      autoApprovalPhone: coach.autoApprovalPhone ?? '',
+      autoApprovalCCCD: coach.autoApprovalCCCD ?? '',
     };
     return (
       name !== orig.name ||
@@ -193,9 +218,14 @@ export default function CoachProfileSettingsScreen() {
       responseHint !== orig.responseHint ||
       hourly1 !== orig.hourly1 ||
       hourlyGroup !== orig.hourlyGroup ||
-      isProfilePublic !== orig.isProfilePublic
+      isProfilePublic !== orig.isProfilePublic ||
+      bankBin !== orig.bankBin ||
+      bankAccountNumber !== orig.bankAccountNumber ||
+      bankAccountName !== orig.bankAccountName ||
+      autoApprovalPhone !== orig.autoApprovalPhone ||
+      autoApprovalCCCD !== orig.autoApprovalCCCD
     );
-  }, [coach, name, bio, photo, specialties, languages, focusLevels, groupSizes, experienceBand, responseHint, hourly1, hourlyGroup, isProfilePublic]);
+  }, [coach, name, bio, photo, specialties, languages, focusLevels, groupSizes, experienceBand, responseHint, hourly1, hourlyGroup, isProfilePublic, bankBin, bankAccountNumber, bankAccountName, autoApprovalPhone, autoApprovalCCCD]);
 
   const onSave = useCallback(async () => {
     if (!coach?.id || !token) {
@@ -238,6 +268,12 @@ export default function CoachProfileSettingsScreen() {
         hourlyRateGroup,
         maxGroupSize: deriveMaxGroupSize(groupSizes),
         isProfilePublic,
+        bankBin: bankBin || null,
+        bankName: bankBin ? bankNameForBin(bankBin) : null,
+        bankAccountNumber: bankAccountNumber.trim() || null,
+        bankAccountName: bankAccountName.trim() || null,
+        autoApprovalPhone: autoApprovalPhone.trim() || null,
+        autoApprovalCCCD: autoApprovalCCCD.trim() || null,
       });
       await refreshProfile();
       Alert.alert('Saved', 'Public profile updated.');
@@ -246,7 +282,7 @@ export default function CoachProfileSettingsScreen() {
     } finally {
       setSaving(false);
     }
-  }, [bio, coach?.id, experienceBand, focusLevels, groupSizes, hourly1, hourlyGroup, isProfilePublic, languages, name, photo, refreshProfile, responseHint, specialties, token]);
+  }, [bio, coach?.id, experienceBand, focusLevels, groupSizes, hourly1, hourlyGroup, isProfilePublic, languages, name, photo, refreshProfile, responseHint, specialties, token, bankBin, bankAccountNumber, bankAccountName, autoApprovalPhone, autoApprovalCCCD]);
 
   // ── Amount modal (pricing rows) ──
 
@@ -418,6 +454,14 @@ export default function CoachProfileSettingsScreen() {
     }
   }, [coach?.id, token, hourly1, loadPacks, refreshProfile]);
 
+  const bankPreviewUrl = useMemo(() => {
+    if (!bankBin?.trim() || !bankAccountNumber.trim()) return null;
+    const acctName = bankAccountName.trim() || 'Preview';
+    const addInfo = encodeURIComponent('Preview');
+    const accountNameEnc = encodeURIComponent(acctName);
+    return `https://img.vietqr.io/image/${bankBin.trim()}-${bankAccountNumber.trim()}-compact.png?amount=10000&addInfo=${addInfo}&accountName=${accountNameEnc}`;
+  }, [bankBin, bankAccountNumber, bankAccountName]);
+
   const showRatings = coach && (coach.ratingOverall != null || coach.ratingOnTime != null || coach.ratingFriendly != null || coach.ratingProfessional != null || coach.ratingRecommend != null);
   const initials = useMemo(() => initialsFromName(name || coach?.name || ''), [name, coach?.name]);
   const showPhoto = photo.trim().length > 0;
@@ -575,6 +619,89 @@ export default function CoachProfileSettingsScreen() {
                 <OptionChip key={o} label={o} selected={groupSizes.includes(o)} onPress={() => setGroupSizes((p) => toggleOption(p, o))} />
               ))}
             </View>
+          </View>
+        </SectionCard>
+
+        {/* ── Bank & Payment ── */}
+        <SectionCard title="Bank & Payment" theme={t}>
+          <Field label="Bank" theme={t}>
+            <Pressable
+              onPress={() => setBankPickerVisible(true)}
+              style={({ pressed }) => [
+                styles.input,
+                styles.bankPickerBtn,
+                { backgroundColor: t.bgInput, borderColor: t.border, opacity: pressed ? 0.85 : 1 },
+              ]}
+            >
+              <Text style={[styles.bankPickerText, { color: bankBin ? t.text : t.textMuted }]}>
+                {bankBin ? bankNameForBin(bankBin) : 'Select your bank'}
+              </Text>
+              <Text style={[styles.priceChevron, { color: t.textMuted }]}>›</Text>
+            </Pressable>
+          </Field>
+          <Field label="Account number" theme={t}>
+            <TextInput
+              value={bankAccountNumber}
+              onChangeText={setBankAccountNumber}
+              style={[styles.input, { color: t.text, backgroundColor: t.bgInput, borderColor: t.border }]}
+              placeholder="e.g. 0123456789"
+              placeholderTextColor={t.textMuted}
+              keyboardType="number-pad"
+            />
+          </Field>
+          <Field label="Account holder name" theme={t}>
+            <TextInput
+              value={bankAccountName}
+              onChangeText={setBankAccountName}
+              style={[styles.input, { color: t.text, backgroundColor: t.bgInput, borderColor: t.border }]}
+              placeholder="NGUYEN VAN A"
+              placeholderTextColor={t.textMuted}
+              autoCapitalize="characters"
+            />
+          </Field>
+
+          {bankPreviewUrl ? (
+            <View style={styles.qrPreviewWrap}>
+              <Text style={[styles.chipSectionLabel, { color: t.textSec }]}>VietQR Preview</Text>
+              <View style={styles.qrPreviewWhite}>
+                <Image
+                  source={{ uri: bankPreviewUrl }}
+                  style={styles.qrPreviewImage}
+                  resizeMode="contain"
+                />
+              </View>
+              <Text style={[styles.qrPreviewHint, { color: t.textMuted }]}>
+                This is what students will scan to pay you
+              </Text>
+            </View>
+          ) : null}
+
+          <View style={styles.sepaySection}>
+            <Text style={[styles.chipSectionLabel, { color: t.textSec }]}>Automatic payment verification</Text>
+            <Text style={[styles.sepayHint, { color: t.textMuted }]}>
+              For future SePay auto-confirmation. Use the phone and ID linked to your bank account.
+            </Text>
+            <Field label="Phone (bank account)" theme={t}>
+              <TextInput
+                value={autoApprovalPhone}
+                onChangeText={setAutoApprovalPhone}
+                style={[styles.input, { color: t.text, backgroundColor: t.bgInput, borderColor: t.border }]}
+                placeholder="0901234567"
+                placeholderTextColor={t.textMuted}
+                keyboardType="phone-pad"
+              />
+            </Field>
+            <Field label="CCCD (Citizen ID)" theme={t}>
+              <TextInput
+                value={autoApprovalCCCD}
+                onChangeText={setAutoApprovalCCCD}
+                style={[styles.input, { color: t.text, backgroundColor: t.bgInput, borderColor: t.border }]}
+                placeholder="012345678901"
+                placeholderTextColor={t.textMuted}
+                keyboardType="number-pad"
+                maxLength={12}
+              />
+            </Field>
           </View>
         </SectionCard>
 
@@ -795,6 +922,41 @@ export default function CoachProfileSettingsScreen() {
           </View>
         </View>
       </Modal>
+      {/* ── Bank Picker modal ── */}
+      <Modal visible={bankPickerVisible} transparent animationType="slide" onRequestClose={() => setBankPickerVisible(false)}>
+        <View style={styles.modalOverlay}>
+          <View style={[styles.modalSheet, { backgroundColor: t.bgCard, maxHeight: '70%' }]}>
+            <View style={[styles.modalHandle, { backgroundColor: t.border }]} />
+            <Text style={[styles.modalTitle, { color: t.text }]}>Select Bank</Text>
+            <FlatList
+              data={VIETNAM_BANKS}
+              keyExtractor={(item) => item.bin}
+              keyboardShouldPersistTaps="handled"
+              renderItem={({ item }) => {
+                const selected = bankBin === item.bin;
+                return (
+                  <Pressable
+                    onPress={() => { setBankBin(item.bin); setBankPickerVisible(false); }}
+                    style={({ pressed }) => [
+                      styles.bankListItem,
+                      { backgroundColor: selected ? t.accentBgStrong : 'transparent', borderColor: t.border, opacity: pressed ? 0.85 : 1 },
+                    ]}
+                  >
+                    <Text style={[styles.bankListName, { color: selected ? t.accent : t.text }]}>{item.name}</Text>
+                    <Text style={[styles.bankListBin, { color: t.textMuted }]}>{item.bin}</Text>
+                  </Pressable>
+                );
+              }}
+            />
+            <Pressable
+              onPress={() => setBankPickerVisible(false)}
+              style={({ pressed }) => [styles.modalCancelBtn, { borderColor: t.border, opacity: pressed ? 0.85 : 1, marginTop: spacing.md }]}
+            >
+              <Text style={[styles.modalCancelText, { color: t.textSec }]}>Cancel</Text>
+            </Pressable>
+          </View>
+        </View>
+      </Modal>
     </SafeAreaView>
   );
 }
@@ -946,6 +1108,19 @@ const styles = StyleSheet.create({
   discountBadgeInline: { paddingVertical: 2, paddingHorizontal: spacing.sm, borderRadius: borderRadius.sm },
   discountBadgeText: { fontSize: fontSize.xs, fontWeight: '700' },
   packSavingsText: { fontSize: fontSize.sm },
+
+  // Bank & Payment
+  bankPickerBtn: { flexDirection: 'row', justifyContent: 'space-between', alignItems: 'center' },
+  bankPickerText: { fontSize: fontSize.md },
+  qrPreviewWrap: { alignItems: 'center', marginTop: spacing.sm },
+  qrPreviewWhite: { backgroundColor: '#fff', borderRadius: borderRadius.md, padding: 8, marginTop: spacing.sm },
+  qrPreviewImage: { width: 180, height: 180 },
+  qrPreviewHint: { fontSize: fontSize.xs, marginTop: spacing.sm, textAlign: 'center' },
+  sepaySection: { marginTop: spacing.md, paddingTop: spacing.md, borderTopWidth: StyleSheet.hairlineWidth, borderTopColor: 'rgba(255,255,255,0.08)' },
+  sepayHint: { fontSize: fontSize.xs, marginBottom: spacing.md, lineHeight: fontSize.xs * 1.5 },
+  bankListItem: { flexDirection: 'row', justifyContent: 'space-between', alignItems: 'center', paddingVertical: spacing.md, paddingHorizontal: spacing.lg, borderBottomWidth: StyleSheet.hairlineWidth },
+  bankListName: { fontSize: fontSize.md, fontWeight: '600' },
+  bankListBin: { fontSize: fontSize.sm },
 
   // Amount modal
   amountSheet: { borderTopLeftRadius: borderRadius.xl, borderTopRightRadius: borderRadius.xl, padding: spacing.xl, paddingBottom: spacing['4xl'] },

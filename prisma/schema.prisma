@@ -226,6 +226,9 @@ model Coach {
   bankAccountNumber   String?
   bankBin             String?
 
+  autoApprovalPhone   String?
+  autoApprovalCCCD    String?
+
   /// Incremented each time coach flags ANY session; gate at 3
   paymentFlagCount    Int                 @default(0)
 

@@ -3,7 +3,6 @@ import { View, Text, Pressable, FlatList, StyleSheet } from 'react-native';
 import { SafeAreaView } from 'react-native-safe-area-context';
 import { useFocusEffect, useRouter, type Href } from 'expo-router';
 import { Ionicons } from '@expo/vector-icons';
-import { BackIcon } from '@/components/Icons';
 import ProfileAvatarButton from '@/components/ui/ProfileAvatarButton';
 import BookingCard from '@/components/booking/BookingCard';
 import { useCourtMap } from '@/context/CourtMapContext';
@@ -23,7 +22,6 @@ export default function BookingsListRoute() {
     t,
     bookings,
     bookingsLoading,
-    backFromSavedOrBookings,
     handleCancelBooking,
     beginEditBooking,
     userId,
@@ -105,7 +103,7 @@ export default function BookingsListRoute() {
           theme={t}
           onPress={() =>
             router.push({
-              pathname: '/(tabs)/(coach)/session-detail',
+              pathname: '/(tabs)/(bookings)/session-detail',
               params: { sessionId: item.id },
             } as unknown as Href)
           }
@@ -156,14 +154,6 @@ export default function BookingsListRoute() {
     <SafeAreaView style={[styles.root, { backgroundColor: t.bg }]} edges={['top']}>
       <View style={styles.header}>
         <View style={styles.titleRow}>
-          <Pressable
-            onPress={backFromSavedOrBookings}
-            hitSlop={8}
-            accessibilityRole="button"
-            accessibilityLabel="Go back"
-          >
-            <BackIcon color={t.text} />
-          </Pressable>
           <Text style={[styles.screenTitle, { color: t.text }]} numberOfLines={1}>
             My Bookings
           </Text>

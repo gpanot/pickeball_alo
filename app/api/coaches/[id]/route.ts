@@ -34,6 +34,10 @@ const publicCoachSelect = {
   maxGroupSize: true,
   cancellationHours: true,
   creditExpiryDays: true,
+  bankName: true,
+  bankAccountName: true,
+  bankAccountNumber: true,
+  bankBin: true,
   courtLinks: {
     where: { isActive: true },
     include: {
@@ -82,6 +86,8 @@ const patchableKeys = new Set([
   'bankAccountName',
   'bankAccountNumber',
   'bankBin',
+  'autoApprovalPhone',
+  'autoApprovalCCCD',
   'isProfilePublic',
   'phoneVerified',
   'isPhoneVerified',
@@ -150,6 +156,8 @@ export async function PATCH(
         case 'bankAccountName':
         case 'bankAccountNumber':
         case 'bankBin':
+        case 'autoApprovalPhone':
+        case 'autoApprovalCCCD':
           if (v !== null && typeof v !== 'string') {
             return NextResponse.json({ error: `${key} must be a string` }, { status: 400 });
           }
@@ -309,6 +317,8 @@ export async function PATCH(
         bankAccountName: true,
         bankAccountNumber: true,
         bankBin: true,
+        autoApprovalPhone: true,
+        autoApprovalCCCD: true,
       },
     });
 

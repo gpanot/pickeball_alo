@@ -18,6 +18,7 @@ function isLoginPath(pathname: string | null) {
 const NAV_LINKS = [
   { href: '/admin/dashboard', label: 'Dashboard' },
   { href: '/admin/bookings', label: 'Bookings' },
+  { href: '/admin/players', label: 'Players' },
   { href: '/admin/venue', label: 'Venue' },
   { href: '/admin/courts', label: 'Courts' },
   { href: '/admin/payments', label: 'Payments' },

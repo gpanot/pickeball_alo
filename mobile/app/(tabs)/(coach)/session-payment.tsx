@@ -172,6 +172,7 @@ export default function SessionPaymentScreen() {
                   bankName={coach.bankName}
                   bankAccountName={coach.bankAccountName}
                   bankAccountNumber={coach.bankAccountNumber}
+                  bankBin={coach.bankBin}
                   amount={session.totalPerPlayer}
                   memo={`CM-${session.id.slice(0, 8).toUpperCase()}`}
                   onPaid={onPaid}
