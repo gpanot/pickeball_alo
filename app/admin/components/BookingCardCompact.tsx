@@ -121,28 +121,28 @@ export function BookingCardCompact({
         <div style={{ fontSize: 11, color: t.orange, marginTop: 2 }}>Payment: {b.paymentNote}</div>
       )}
 
-      {b.paymentProofUrl && (b.status === 'payment_submitted' || b.status === 'paid') && onProof && (
+      {b.paymentProofUrl && (b.status === 'payment_submitted' || b.status === 'paid') && (
         <button
           type="button"
-          onClick={() => onProof({ url: b.paymentProofUrl!, orderRef: formatBookingOrderRef(b.orderId) })}
+          onClick={() => onProof?.({ url: b.paymentProofUrl!, orderRef: formatBookingOrderRef(b.orderId) })}
           style={{
             marginTop: 6,
-            padding: 0,
-            border: `1px solid ${t.border}`,
-            borderRadius: 6,
-            background: 'transparent',
+            padding: 4,
+            border: `1px solid ${t.blue}44`,
+            borderRadius: 8,
+            background: `${t.blue}08`,
             cursor: 'pointer',
             display: 'inline-flex',
             alignItems: 'center',
-            gap: 6,
+            gap: 8,
           }}
         >
           <img
             src={b.paymentProofUrl}
             alt="Proof"
-            style={{ width: 36, height: 36, objectFit: 'cover', borderRadius: 5 }}
+            style={{ width: 40, height: 40, objectFit: 'cover', borderRadius: 6 }}
           />
-          <span style={{ fontSize: 11, color: t.blue, fontWeight: 600, paddingRight: 8 }}>View proof</span>
+          <span style={{ fontSize: 11, color: t.blue, fontWeight: 600, paddingRight: 8 }}>Tap to enlarge</span>
         </button>
       )}
 
